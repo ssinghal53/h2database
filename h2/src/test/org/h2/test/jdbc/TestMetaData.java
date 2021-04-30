@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -51,6 +51,7 @@ public class TestMetaData extends TestDb {
         testColumnPrecision();
         testColumnDefault();
         testColumnGenerated();
+        testHiddenColumn();
         testCrossReferences();
         testProcedureColumns();
         testTypeInfo();
@@ -208,6 +209,28 @@ public class TestMetaData extends TestDb {
         conn.close();
     }
 
+    private void testHiddenColumn() throws SQLException {
+        Connection conn = getConnection("metaData");
+        DatabaseMetaData meta = conn.getMetaData();
+        ResultSet rs;
+        Statement stat = conn.createStatement();
+        stat.execute("CREATE TABLE TEST(A INT, B INT INVISIBLE)");
+        rs = meta.getColumns(null, null, "TEST", null);
+        assertTrue(rs.next());
+        assertEquals("A", rs.getString("COLUMN_NAME"));
+        assertFalse(rs.next());
+        rs = meta.getPseudoColumns(null, null, "TEST", null);
+        assertTrue(rs.next());
+        assertEquals("B", rs.getString("COLUMN_NAME"));
+        assertEquals("YES", rs.getString("IS_NULLABLE"));
+        assertTrue(rs.next());
+        assertEquals("_ROWID_", rs.getString("COLUMN_NAME"));
+        assertEquals("NO", rs.getString("IS_NULLABLE"));
+        assertFalse(rs.next());
+        stat.execute("DROP TABLE TEST");
+        conn.close();
+    }
+
     private void testProcedureColumns() throws SQLException {
         Connection conn = getConnection("metaData");
         DatabaseMetaData meta = conn.getMetaData();
@@ -287,7 +310,7 @@ public class TestMetaData extends TestDb {
         testTypeInfo(rs, "CHARACTER", Types.CHAR, MAX_STRING_LENGTH, "'", "'", "LENGTH", true, false, (short) 0,
                 (short) 0, 0);
         testTypeInfo(rs, "NUMERIC", Types.NUMERIC, MAX_NUMERIC_PRECISION, null, null, "PRECISION,SCALE", false, true,
-                Short.MIN_VALUE, Short.MAX_VALUE, 10);
+                (short) 0, Short.MAX_VALUE, 10);
         testTypeInfo(rs, "DECFLOAT", Types.NUMERIC, MAX_NUMERIC_PRECISION, null, null, "PRECISION", false, false,
                 (short) 0, (short) 0, 10);
         testTypeInfo(rs, "INTEGER", Types.INTEGER, 32, null, null, null, false, false, (short) 0,
@@ -544,19 +567,6 @@ public class TestMetaData extends TestDb {
 
         assertEquals("schema", meta.getSchemaTerm());
         assertEquals("\\", meta.getSearchStringEscape());
-        assertEquals("CURRENT_CATALOG," //
-                + "CURRENT_SCHEMA," //
-                + "GROUPS," //
-                + "IF,ILIKE,INTERSECTS," //
-                + "LIMIT," //
-                + "MINUS," //
-                + "OFFSET," //
-                + "QUALIFY," //
-                + "REGEXP,ROWNUM," //
-                + "SYSDATE,SYSTIME,SYSTIMESTAMP," //
-                + "TODAY,TOP,"//
-                + "_ROWID_", //
-                meta.getSQLKeywords());
 
         assertTrue(meta.getURL().startsWith("jdbc:h2:"));
         assertTrue(meta.getUserName().length() > 1);
@@ -1240,8 +1250,8 @@ public class TestMetaData extends TestDb {
         rs = stat.executeQuery("SELECT * FROM INFORMATION_SCHEMA.SETTINGS");
         int mvStoreSettingsCount = 0, pageStoreSettingsCount = 0;
         while (rs.next()) {
-            String name = rs.getString("NAME");
-            trace(name + '=' + rs.getString("VALUE"));
+            String name = rs.getString("SETTING_NAME");
+            trace(name + '=' + rs.getString("SETTING_VALUE"));
             if ("COMPRESS".equals(name) || "REUSE_SPACE".equals(name)) {
                 mvStoreSettingsCount++;
             } else if (name.startsWith("PAGE_STORE_")) {

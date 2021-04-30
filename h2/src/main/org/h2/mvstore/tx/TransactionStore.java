@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -175,12 +175,16 @@ public class TransactionStore {
         return store.openMap(TYPE_REGISTRY_NAME, typeRegistryBuilder);
     }
 
+    public void init() {
+        init(ROLLBACK_LISTENER_NONE);
+    }
+
     /**
      * Initialize the store. This is needed before a transaction can be opened.
      * If the transaction store is corrupt, this method can throw an exception,
      * in which case the store can only be used for reading.
      */
-    public void init() {
+    public void init(RollbackListener listener) {
         if (!init) {
             for (String mapName : store.getMapNames()) {
                 if (mapName.startsWith(UNDO_LOG_NAME_PREFIX)) {
@@ -225,7 +229,7 @@ public class TransactionStore {
                                     logId = lastUndoKey == null ? 0 : getLogId(lastUndoKey) + 1;
                                 }
                                 registerTransaction(transactionId, status, name, logId, timeoutMillis, 0,
-                                        IsolationLevel.READ_COMMITTED, ROLLBACK_LISTENER_NONE);
+                                        IsolationLevel.READ_COMMITTED, listener);
                                 continue;
                             }
                         }

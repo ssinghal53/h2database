@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -307,8 +307,8 @@ public class MVTable extends RegularTable {
     }
 
     @Override
-    public Index addIndex(SessionLocal session, String indexName, int indexId, IndexColumn[] cols, IndexType indexType,
-            boolean create, String indexComment) {
+    public Index addIndex(SessionLocal session, String indexName, int indexId, IndexColumn[] cols,
+            int uniqueColumnCount, IndexType indexType, boolean create, String indexComment) {
         cols = prepareColumns(database, cols, indexType);
         boolean isSessionTemporary = isTemporary() && !isGlobalTemporary();
         if (!isSessionTemporary) {
@@ -333,10 +333,10 @@ public class MVTable extends RegularTable {
                     indexType);
         } else if (indexType.isSpatial()) {
             index = new MVSpatialIndex(session.getDatabase(), this, indexId,
-                    indexName, cols, indexType);
+                    indexName, cols, uniqueColumnCount, indexType);
         } else {
             index = new MVSecondaryIndex(session.getDatabase(), this, indexId,
-                    indexName, cols, indexType);
+                    indexName, cols, uniqueColumnCount, indexType);
         }
         if (index.needRebuild()) {
             rebuildIndex(session, index, indexName);
@@ -395,7 +395,7 @@ public class MVTable extends RegularTable {
 
         int bufferSize = database.getMaxMemoryRows() / 2;
         ArrayList<Row> buffer = new ArrayList<>(bufferSize);
-        String n = getName() + ":" + index.getName();
+        String n = getName() + ':' + index.getName();
         ArrayList<String> bufferNames = Utils.newSmallArrayList();
         while (cursor.next()) {
             Row row = cursor.get();
@@ -421,8 +421,7 @@ public class MVTable extends RegularTable {
             addRowsToIndex(session, buffer, index);
         }
         if (remaining != 0) {
-            throw DbException.throwInternalError("rowcount remaining=" + remaining +
-                    " " + getName());
+            throw DbException.getInternalError("rowcount remaining=" + remaining + ' ' + getName());
         }
     }
 
@@ -434,7 +433,7 @@ public class MVTable extends RegularTable {
         long i = 0;
         int bufferSize = (int) Math.min(total, database.getMaxMemoryRows());
         ArrayList<Row> buffer = new ArrayList<>(bufferSize);
-        String n = getName() + ":" + index.getName();
+        String n = getName() + ':' + index.getName();
         while (cursor.next()) {
             Row row = cursor.get();
             buffer.add(row);
@@ -446,8 +445,7 @@ public class MVTable extends RegularTable {
         }
         addRowsToIndex(session, buffer, index);
         if (remaining != 0) {
-            throw DbException.throwInternalError("rowcount remaining=" + remaining +
-                    " " + getName());
+            throw DbException.getInternalError("rowcount remaining=" + remaining + ' ' + getName());
         }
     }
 
@@ -550,11 +548,6 @@ public class MVTable extends RegularTable {
 
     @Override
     public Index getScanIndex(SessionLocal session) {
-        return primaryIndex;
-    }
-
-    @Override
-    public Index getUniqueIndex() {
         return primaryIndex;
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -111,7 +111,7 @@ public final class XMLFunction extends FunctionN {
             v1 = ValueVarchar.get(StringUtils.xmlText(v1.getString(), v2 != null && v2.getBoolean()), session);
             break;
         default:
-            throw DbException.throwInternalError("function=" + function);
+            throw DbException.getInternalError("function=" + function);
         }
         return v1;
     }
@@ -140,7 +140,7 @@ public final class XMLFunction extends FunctionN {
             max = 2;
             break;
         default:
-            throw DbException.throwInternalError("function=" + function);
+            throw DbException.getInternalError("function=" + function);
         }
         int len = args.length;
         if (len < min || len > max) {

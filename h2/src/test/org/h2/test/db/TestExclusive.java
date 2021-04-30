@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -42,8 +42,7 @@ public class TestExclusive extends TestDb {
         Connection conn = getConnection("exclusive");
         Statement stat = conn.createStatement();
         stat.execute("set exclusive true");
-        assertThrows(ErrorCode.DATABASE_IS_IN_EXCLUSIVE_MODE, this).
-                getConnection("exclusive");
+        assertThrows(ErrorCode.DATABASE_IS_IN_EXCLUSIVE_MODE, () -> getConnection("exclusive"));
 
         stat.execute("set exclusive false");
         Connection conn2 = getConnection("exclusive");
@@ -114,11 +113,11 @@ public class TestExclusive extends TestDb {
     private static boolean getExclusiveMode(Connection connection) throws SQLException{
         boolean exclusiveMode = false;
 
-        String sql = "SELECT `VALUE` FROM INFORMATION_SCHEMA.Settings WHERE NAME = 'EXCLUSIVE'";
+        String sql = "SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME = 'EXCLUSIVE'";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             ResultSet result = statement.executeQuery();
             if (result.next()) {
-                exclusiveMode = result.getBoolean("VALUE");
+                exclusiveMode = result.getBoolean(1);
             }
         }
 

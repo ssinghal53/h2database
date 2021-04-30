@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -54,7 +54,7 @@ public final class FunctionsDB2Derby extends ModeFunction {
         case IDENTITY_VAL_LOCAL:
             return session.getLastIdentity().convertTo(type);
         default:
-            throw DbException.throwInternalError("type=" + info.type);
+            throw DbException.getInternalError("type=" + info.type);
         }
     }
 
@@ -65,7 +65,7 @@ public final class FunctionsDB2Derby extends ModeFunction {
             type = IDENTITY_VAL_LOCAL_TYPE;
             break;
         default:
-            throw DbException.throwInternalError("type=" + info.type);
+            throw DbException.getInternalError("type=" + info.type);
         }
         return this;
     }

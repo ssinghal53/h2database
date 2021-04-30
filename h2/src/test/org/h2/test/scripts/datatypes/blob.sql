@@ -1,4 +1,4 @@
--- Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+-- Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
 -- and the EPL 1.0 (https://h2database.com/html/license.html).
 -- Initial Developer: H2 Group
 --
@@ -52,7 +52,7 @@ CREATE TABLE TEST(B BLOB(8192P));
 > exception INVALID_VALUE_2
 
 EXPLAIN VALUES CAST(X'00' AS BLOB(1));
->> VALUES (CAST(X'00' AS BLOB(1)))
+>> VALUES (CAST(X'00' AS BINARY LARGE OBJECT(1)))
 
 CREATE TABLE T(C BLOB(0));
 > exception INVALID_VALUE_2

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -13,17 +13,16 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Iterator;
+import java.util.Map.Entry;
 import org.h2.api.ErrorCode;
 import org.h2.api.IntervalQualifier;
 import org.h2.engine.CastDataProvider;
 import org.h2.engine.Database;
-import org.h2.engine.Mode;
 import org.h2.message.DbException;
 import org.h2.mode.DefaultNullOrdering;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
-import org.h2.mvstore.rtree.Spatial;
-import org.h2.mvstore.rtree.SpatialDataType;
 import org.h2.mvstore.type.BasicDataType;
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.MetaType;
@@ -35,12 +34,17 @@ import org.h2.store.DataHandler;
 import org.h2.util.DateTimeUtils;
 import org.h2.util.Utils;
 import org.h2.value.CompareMode;
+import org.h2.value.ExtTypeInfoEnum;
+import org.h2.value.ExtTypeInfoRow;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
 import org.h2.value.ValueArray;
 import org.h2.value.ValueBigint;
 import org.h2.value.ValueBinary;
+import org.h2.value.ValueBlob;
 import org.h2.value.ValueBoolean;
 import org.h2.value.ValueChar;
+import org.h2.value.ValueClob;
 import org.h2.value.ValueCollectionBase;
 import org.h2.value.ValueDate;
 import org.h2.value.ValueDecfloat;
@@ -51,8 +55,6 @@ import org.h2.value.ValueInterval;
 import org.h2.value.ValueJavaObject;
 import org.h2.value.ValueJson;
 import org.h2.value.ValueLob;
-import org.h2.value.ValueLobDatabase;
-import org.h2.value.ValueLobInMemory;
 import org.h2.value.ValueNull;
 import org.h2.value.ValueNumeric;
 import org.h2.value.ValueReal;
@@ -67,6 +69,9 @@ import org.h2.value.ValueUuid;
 import org.h2.value.ValueVarbinary;
 import org.h2.value.ValueVarchar;
 import org.h2.value.ValueVarcharIgnoreCase;
+import org.h2.value.lob.LobData;
+import org.h2.value.lob.LobDataDatabase;
+import org.h2.value.lob.LobDataInMemory;
 
 /**
  * A row type.
@@ -111,7 +116,7 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
     private static final byte BIGINT_NEG = 67;
     private static final byte VARCHAR_0_31 = 68;
     private static final int VARBINARY_0_31 = 100;
-    private static final int SPATIAL_KEY_2D = 132;
+    // 132 was used for SPATIAL_KEY_2D
     // 133 was used for CUSTOM_DATA_TYPE
     private static final int JSON = 134;
     private static final int TIMESTAMP_TZ = 135;
@@ -122,24 +127,20 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
     final DataHandler handler;
     final CastDataProvider provider;
     final CompareMode compareMode;
-    protected final Mode mode;
     final int[] sortTypes;
-    SpatialDataType spatialType;
     private RowFactory rowFactory;
 
     public ValueDataType() {
-        this(null, CompareMode.getInstance(null, 0), null, null, null);
+        this(null, CompareMode.getInstance(null, 0), null, null);
     }
 
     public ValueDataType(Database database, int[] sortTypes) {
-        this(database, database.getCompareMode(), database.getMode(), database, sortTypes);
+        this(database, database.getCompareMode(), database, sortTypes);
     }
 
-    public ValueDataType(CastDataProvider provider, CompareMode compareMode, Mode mode, DataHandler handler,
-            int[] sortTypes) {
+    public ValueDataType(CastDataProvider provider, CompareMode compareMode, DataHandler handler, int[] sortTypes) {
         this.provider = provider;
         this.compareMode = compareMode;
-        this.mode = mode;
         this.handler = handler;
         this.sortTypes = sortTypes;
     }
@@ -150,18 +151,6 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
 
     public void setRowFactory(RowFactory rowFactory) {
         this.rowFactory = rowFactory;
-    }
-
-    private SpatialDataType getSpatialDataType() {
-        if (spatialType == null) {
-            spatialType = new SpatialDataType(2) {
-                @Override
-                protected Spatial create(long id, float... minMax) {
-                    return new SpatialKey(id, minMax);
-                }
-            };
-        }
-        return spatialType;
     }
 
     @Override
@@ -274,28 +263,16 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
 
     @Override
     public int getMemory(Value v) {
-        if (v instanceof SpatialKey) {
-            return getSpatialDataType().getMemory((SpatialKey) v);
-        }
         return v == null ? 0 : v.getMemory();
     }
 
     @Override
     public Value read(ByteBuffer buff) {
-        return readValue(buff, true);
+        return readValue(buff, null);
     }
 
     @Override
-    public void write(WriteBuffer buff, Value obj) {
-        if (obj instanceof SpatialKey) {
-            buff.put((byte) SPATIAL_KEY_2D);
-            getSpatialDataType().write(buff, (SpatialKey) obj);
-            return;
-        }
-        writeValue(buff, obj, true);
-    }
-
-    private void writeValue(WriteBuffer buff, Value v, boolean rowAsRow) {
+    public void write(WriteBuffer buff, Value v) {
         if (v == ValueNull.INSTANCE) {
             buff.put((byte) 0);
             return;
@@ -356,12 +333,25 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
             break;
         }
         case Value.DECFLOAT: {
-            BigDecimal x = v.getBigDecimal();
-            byte[] bytes = x.unscaledValue().toByteArray();
-            buff.put((byte) DECFLOAT).
-                putVarInt(x.scale()).
-                putVarInt(bytes.length).
-                put(bytes);
+            ValueDecfloat d = (ValueDecfloat) v;
+            buff.put((byte) DECFLOAT);
+            if (d.isFinite()) {
+                BigDecimal x = d.getBigDecimal();
+                byte[] bytes = x.unscaledValue().toByteArray();
+                buff.putVarInt(x.scale()).
+                    putVarInt(bytes.length).
+                    put(bytes);
+            } else {
+                int c;
+                if (d == ValueDecfloat.NEGATIVE_INFINITY) {
+                    c = -3;
+                } else if (d == ValueDecfloat.POSITIVE_INFINITY) {
+                    c = -2;
+                } else {
+                    c = -1;
+                }
+                buff.putVarInt(0).putVarInt(c);
+            }
             break;
         }
         case Value.TIME:
@@ -465,33 +455,27 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
         case Value.CLOB: {
             buff.put(type == Value.BLOB ? BLOB : CLOB);
             ValueLob lob = (ValueLob) v;
-            if (lob instanceof ValueLobDatabase) {
-                ValueLobDatabase lobDb = (ValueLobDatabase) lob;
+            LobData lobData = lob.getLobData();
+            if (lobData instanceof LobDataDatabase) {
+                LobDataDatabase lobDataDatabase = (LobDataDatabase) lobData;
                 buff.putVarInt(-3).
-                    putVarInt(lobDb.getTableId()).
-                    putVarLong(lobDb.getLobId()).
-                    putVarLong(lob.getType().getPrecision());
+                    putVarInt(lobDataDatabase.getTableId()).
+                    putVarLong(lobDataDatabase.getLobId()).
+                    putVarLong(lob.getPrecision());
             } else {
-                byte[] small = ((ValueLobInMemory)lob).getSmall();
+                byte[] small = ((LobDataInMemory) lobData).getSmall();
                 buff.putVarInt(small.length).
                     put(small);
             }
             break;
         }
         case Value.ARRAY:
-            if (rowAsRow && rowFactory != null && v instanceof SearchRow) {
-                SearchRow row = (SearchRow) v;
-                int[] indexes = rowFactory.getIndexes();
-                writeRow(buff, row, indexes);
-                break;
-            }
-            //$FALL-THROUGH$
         case Value.ROW: {
             Value[] list = ((ValueCollectionBase) v).getList();
             buff.put(type == Value.ARRAY ? ARRAY : ROW)
                     .putVarInt(list.length);
             for (Value x : list) {
-                writeValue(buff, x, false);
+                write(buff, x);
             }
             break;
         }
@@ -536,30 +520,13 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
             writeBinary((byte) JSON, buff, v);
             break;
         default:
-            throw DbException.throwInternalError("type=" + v.getValueType());
+            throw DbException.getInternalError("type=" + v.getValueType());
         }
     }
 
     private static void writeBinary(byte type, WriteBuffer buff, Value v) {
         byte[] b = v.getBytesNoCopy();
         buff.put(type).putVarInt(b.length).put(b);
-    }
-
-    void writeRow(WriteBuffer buff, SearchRow row, int[] indexes) {
-        buff.put(ARRAY);
-        if (indexes == null) {
-            int columnCount = row.getColumnCount();
-            buff.putVarInt(columnCount + 1);
-            for (int i = 0; i < columnCount; i++) {
-                writeValue(buff, row.getValue(i), false);
-            }
-        } else {
-            buff.putVarInt(indexes.length + 1);
-            for (int i : indexes) {
-                writeValue(buff, row.getValue(i), false);
-            }
-        }
-        writeValue(buff, ValueBigint.get(row.getKey()), false);
     }
 
     /**
@@ -604,9 +571,11 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
     /**
      * Read a value.
      *
+     * @param buff the source buffer
+     * @param columnType the data type of value, or {@code null}
      * @return the value
      */
-    private Value readValue(ByteBuffer buff, boolean rowAsRow) {
+    Value readValue(ByteBuffer buff, TypeInfo columnType) {
         int type = buff.get() & 255;
         switch (type) {
         case NULL:
@@ -617,7 +586,6 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
             return ValueBoolean.FALSE;
         case INT_NEG:
             return ValueInteger.get(-readVarInt(buff));
-        case ENUM:
         case INTEGER:
             return ValueInteger.get(readVarInt(buff));
         case BIGINT_NEG:
@@ -638,10 +606,25 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
             int scale = readVarInt(buff);
             return ValueNumeric.get(BigDecimal.valueOf(readVarLong(buff), scale));
         }
-        case NUMERIC:
-            return ValueNumeric.get(readBigDecimal(buff));
-        case DECFLOAT:
-            return ValueDecfloat.get(readBigDecimal(buff));
+        case NUMERIC: {
+            int scale = readVarInt(buff);
+            return ValueNumeric.get(new BigDecimal(new BigInteger(readVarBytes(buff)), scale));
+        }
+        case DECFLOAT: {
+            int scale = readVarInt(buff), len = readVarInt(buff);
+            switch (len) {
+            case -3:
+                return ValueDecfloat.NEGATIVE_INFINITY;
+            case -2:
+                return ValueDecfloat.POSITIVE_INFINITY;
+            case -1:
+                return ValueDecfloat.NAN;
+            default:
+                byte[] b = Utils.newBytes(len);
+                buff.get(b, 0, len);
+                return ValueDecfloat.get(new BigDecimal(new BigInteger(b), scale));
+            }
+        }
         case DATE:
             return ValueDate.fromDateValue(readVarLong(buff));
         case TIME:
@@ -671,6 +654,13 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
             return ValueVarcharIgnoreCase.get(readString(buff));
         case CHAR:
             return ValueChar.get(readString(buff));
+        case ENUM: {
+            int ordinal = readVarInt(buff);
+            if (columnType != null) {
+                return ((ExtTypeInfoEnum) columnType.getExtTypeInfo()).getValue(ordinal, provider);
+            }
+            return ValueInteger.get(ordinal);
+        }
         case INTERVAL: {
             int ordinal = buff.get();
             boolean negative = ordinal < 0;
@@ -698,58 +688,52 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
             if (smallLen >= 0) {
                 byte[] small = Utils.newBytes(smallLen);
                 buff.get(small, 0, smallLen);
-                return ValueLobInMemory.createSmallLob(type == BLOB ? Value.BLOB : Value.CLOB, small);
+                return type == BLOB ? ValueBlob.createSmall(small) : ValueClob.createSmall(small);
             } else if (smallLen == -3) {
                 int tableId = readVarInt(buff);
                 long lobId = readVarLong(buff);
                 long precision = readVarLong(buff);
-                return ValueLobDatabase.create(type == BLOB ? Value.BLOB : Value.CLOB,
-                        handler, tableId, lobId, precision);
+                return type == BLOB ? ValueBlob.create(precision, handler, tableId, lobId)
+                        : ValueClob.create(precision, handler, tableId, lobId);
             } else {
                 throw DbException.get(ErrorCode.FILE_CORRUPTED_1, "lob type: " + smallLen);
             }
         }
-        case ARRAY:
-            if (rowFactory != null && rowAsRow) {
-                int valueCount = readVarInt(buff) - 1;
-                SearchRow row = rowFactory.createRow();
-                int[] indexes = rowFactory.getIndexes();
-                boolean hasRowKey;
-                if (indexes == null) {
-                    int columnCount = row.getColumnCount();
-                    for (int i = 0; i < columnCount; i++) {
-                        row.setValue(i, readValue(buff, false));
-                    }
-                    hasRowKey = valueCount == columnCount;
-                } else {
-                    for (int i : indexes) {
-                        row.setValue(i, readValue(buff, false));
-                    }
-                    hasRowKey = valueCount == indexes.length;
-                }
-                if (hasRowKey) {
-                    row.setKey(readValue(buff, false).getLong());
-                }
-                return row;
+        case ARRAY: {
+            if (columnType != null) {
+                TypeInfo elementType = (TypeInfo) columnType.getExtTypeInfo();
+                return ValueArray.get(elementType, readArrayElements(buff, elementType), provider);
             }
-            //$FALL-THROUGH$
+            return ValueArray.get(readArrayElements(buff, null), provider);
+        }
         case ROW: {
             int len = readVarInt(buff);
             Value[] list = new Value[len];
-            for (int i = 0; i < len; i++) {
-                list[i] = readValue(buff, false);
+            if (columnType != null) {
+                ExtTypeInfoRow extTypeInfoRow = (ExtTypeInfoRow) columnType.getExtTypeInfo();
+                Iterator<Entry<String, TypeInfo>> fields = extTypeInfoRow.getFields().iterator();
+                for (int i = 0; i < len; i++) {
+                    list[i] = readValue(buff, fields.next().getValue());
+                }
+                return ValueRow.get(columnType, list);
             }
-            return type == ARRAY && !rowAsRow ? ValueArray.get(list, provider) : ValueRow.get(list);
+            TypeInfo[] columnTypes = rowFactory.getColumnTypes();
+            for (int i = 0; i < len; i++) {
+                list[i] = readValue(buff, columnTypes[i]);
+            }
+            return ValueRow.get(list);
         }
         case GEOMETRY:
             return ValueGeometry.get(readVarBytes(buff));
-        case SPATIAL_KEY_2D:
-            return (SpatialKey) getSpatialDataType().read(buff);
         case JSON:
             return ValueJson.getInternal(readVarBytes(buff));
         default:
             if (type >= INT_0_15 && type < INT_0_15 + 16) {
-                return ValueInteger.get(type - INT_0_15);
+                int i = type - INT_0_15;
+                if (columnType != null && columnType.getValueType() == Value.ENUM) {
+                    return ((ExtTypeInfoEnum) columnType.getExtTypeInfo()).getValue(i, provider);
+                }
+                return ValueInteger.get(i);
             } else if (type >= BIGINT_0_7 && type < BIGINT_0_7 + 8) {
                 return ValueBigint.get(type - BIGINT_0_7);
             } else if (type >= VARBINARY_0_31 && type < VARBINARY_0_31 + 32) {
@@ -764,9 +748,13 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
         }
     }
 
-    private static BigDecimal readBigDecimal(ByteBuffer buff) {
-        int scale = readVarInt(buff);
-        return new BigDecimal(new BigInteger(readVarBytes(buff)), scale);
+    private Value[] readArrayElements(ByteBuffer buff, TypeInfo elementType) {
+        int len = readVarInt(buff);
+        Value[] list = new Value[len];
+        for (int i = 0; i < len; i++) {
+            list[i] = readValue(buff, elementType);
+        }
+        return list;
     }
 
     private static byte[] readVarBytes(ByteBuffer buff) {
@@ -822,6 +810,7 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
         buff.putVarInt(columnCount);
         int[] indexes = rowFactory == null ? null : rowFactory.getIndexes();
         writeIntArray(buff, indexes);
+        buff.put(rowFactory == null || rowFactory.getRowDataType().isStoreKeys() ? (byte) 1 : (byte) 0);
     }
 
     private static void writeIntArray(WriteBuffer buff, int[] array) {
@@ -840,8 +829,6 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
         return FACTORY;
     }
 
-
-
     private static final Factory FACTORY = new Factory();
 
     public static final class Factory implements StatefulDataType.Factory<Database> {
@@ -851,15 +838,15 @@ public final class ValueDataType extends BasicDataType<Value> implements Statefu
             int[] sortTypes = readIntArray(buff);
             int columnCount = DataUtils.readVarInt(buff);
             int[] indexes = readIntArray(buff);
+            boolean storeKeys = buff.get() != 0;
             CompareMode compareMode = database == null ? CompareMode.getInstance(null, 0) : database.getCompareMode();
-            Mode mode = database == null ? Mode.getRegular() : database.getMode();
             if (database == null) {
                 return new ValueDataType();
             } else if (sortTypes == null) {
                 return new ValueDataType(database, null);
             }
-            RowFactory rowFactory = RowFactory.getDefaultRowFactory()
-                    .createRowFactory(database, compareMode, mode, database, sortTypes, indexes, columnCount);
+            RowFactory rowFactory = RowFactory.getDefaultRowFactory().createRowFactory(database, compareMode, database,
+                    sortTypes, indexes, null, columnCount, storeKeys);
             return rowFactory.getRowDataType();
         }
 

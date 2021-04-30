@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -537,6 +537,11 @@ public interface CommandInterface extends AutoCloseable {
     int ALTER_TABLE_ALTER_COLUMN_DEFAULT_ON_NULL = 100;
 
     /**
+     * The type of an ALTER DOMAIN RENAME CONSTRAINT statement.
+     */
+    int ALTER_DOMAIN_RENAME_CONSTRAINT = 101;
+
+    /**
      * Get command type.
      *
      * @return one of the constants above
@@ -564,7 +569,7 @@ public interface CommandInterface extends AutoCloseable {
      * @param scrollable if the result set must be scrollable
      * @return the result
      */
-    ResultInterface executeQuery(int maxRows, boolean scrollable);
+    ResultInterface executeQuery(long maxRows, boolean scrollable);
 
     /**
      * Execute the statement
@@ -602,4 +607,5 @@ public interface CommandInterface extends AutoCloseable {
      * @return the empty result
      */
     ResultInterface getMetaData();
+
 }

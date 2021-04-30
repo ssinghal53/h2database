@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -25,15 +25,13 @@ public class PageDelegateIndex extends PageIndex {
 
     private final PageDataIndex mainIndex;
 
-    public PageDelegateIndex(PageStoreTable table, int id, String name,
-            IndexType indexType, PageDataIndex mainIndex, boolean create,
-            SessionLocal session) {
-        super(table, id, name,
-                IndexColumn.wrap(new Column[] { table.getColumn(mainIndex.getMainIndexColumn()) }),
-                indexType);
+    public PageDelegateIndex(PageStoreTable table, int id, String name, IndexType indexType, PageDataIndex mainIndex,
+            boolean create, SessionLocal session) {
+        super(table, id, name, IndexColumn.wrap(new Column[] { table.getColumn(mainIndex.getMainIndexColumn()) }),
+                1, indexType);
         this.mainIndex = mainIndex;
         if (!database.isPersistent() || id < 0) {
-            throw DbException.throwInternalError(name);
+            throw DbException.getInternalError(name);
         }
         PageStore store = database.getPageStore();
         store.addIndex(this);

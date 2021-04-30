@@ -45,6 +45,7 @@
 90002=メソッドはクエリしかサポートしていません。executeQueryのかわりに、excecute、またはexecuteUpdateを使用してください
 90003=文字数が奇数の16進文字列です: {0}
 90004=16進文字列に不正な文字が含まれています: {0}
+90005=#Invalid trigger flags: {0}
 90006=シーケンス {0} を使い果たしました
 90007=オブジェクトはすでに閉じられています
 90008=パラメータ {1} に対する値 {0} が不正です
@@ -193,6 +194,7 @@
 90154=#Generated column {0} cannot be assigned
 90155=#Generated column {0} cannot be updatable by a referential constraint with {1} clause
 90156=#Column alias is not specified for expression {0}
+90157=#Column index {0} in GROUP BY clause is outside valid range 1 - {1}
 HY000=一般エラー: {0}
 HY004=不明なデータ型: {0}
 HYC00=機能はサポートされていません: {0}

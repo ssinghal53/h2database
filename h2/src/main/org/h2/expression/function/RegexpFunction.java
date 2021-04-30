@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -113,7 +113,7 @@ public final class RegexpFunction extends FunctionN {
             break;
         }
         default:
-            throw DbException.throwInternalError("function=" + function);
+            throw DbException.getInternalError("function=" + function);
         }
         return v1;
     }
@@ -250,7 +250,7 @@ public final class RegexpFunction extends FunctionN {
             type = TypeInfo.TYPE_VARCHAR;
             break;
         default:
-            throw DbException.throwInternalError("function=" + function);
+            throw DbException.getInternalError("function=" + function);
         }
         int len = args.length;
         if (len < min || len > max) {

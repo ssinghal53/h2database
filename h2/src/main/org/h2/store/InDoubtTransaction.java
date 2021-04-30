@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -50,15 +50,15 @@ public interface InDoubtTransaction {
      */
     default String getStateDescription() {
         int state = getState();
-        switch(state) {
-            case 0:
-                return "IN_DOUBT";
-            case 1:
-                return "COMMIT";
-            case 2:
-                return "ROLLBACK";
-            default:
-                throw DbException.throwInternalError("state=" + state);
+        switch (state) {
+        case 0:
+            return "IN_DOUBT";
+        case 1:
+            return "COMMIT";
+        case 2:
+            return "ROLLBACK";
+        default:
+            throw DbException.getInternalError("state=" + state);
         }
     }
 

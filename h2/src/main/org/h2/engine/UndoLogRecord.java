@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -12,6 +12,7 @@ import org.h2.result.SearchRow;
 import org.h2.store.Data;
 import org.h2.store.FileStore;
 import org.h2.table.Table;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
 
 /**
@@ -60,17 +61,6 @@ public class UndoLogRecord {
     }
 
     /**
-     * Check if this undo log record can be store. Only record can be stored if
-     * the table has a unique index.
-     *
-     * @return if it can be stored
-     */
-    boolean canStore() {
-        // if large transactions are enabled, this method is not called
-        return table.getUniqueIndex() != null;
-    }
-
-    /**
      * Un-do the operation. If the row was inserted before, it is deleted now,
      * and vice versa.
      *
@@ -110,7 +100,7 @@ public class UndoLogRecord {
             }
             break;
         default:
-            DbException.throwInternalError("op=" + operation);
+            throw DbException.getInternalError("op=" + operation);
         }
     }
 
@@ -130,7 +120,7 @@ public class UndoLogRecord {
         buff.writeInt(count);
         for (int i = 0; i < count; i++) {
             Value v = row.getValue(i);
-            buff.checkCapacity(buff.getValueLen(v));
+            buff.checkCapacity(Data.getValueLen(v));
             buff.writeValue(v);
         }
         buff.fillAligned();
@@ -189,7 +179,7 @@ public class UndoLogRecord {
         int oldOp = operation;
         load(buff, log);
         if (operation != oldOp) {
-            DbException.throwInternalError("operation=" + operation + " op=" + oldOp);
+            throw DbException.getInternalError("operation=" + operation + " op=" + oldOp);
         }
     }
 
@@ -200,7 +190,7 @@ public class UndoLogRecord {
         int columnCount = buff.readInt();
         Value[] values = new Value[columnCount];
         for (int i = 0; i < columnCount; i++) {
-            values[i] = buff.readValue();
+            values[i] = buff.readValue(TypeInfo.TYPE_UNKNOWN);
         }
         row = table.createRow(values, SearchRow.MEMORY_CALCULATE, key);
         state = IN_MEMORY_INVALID;

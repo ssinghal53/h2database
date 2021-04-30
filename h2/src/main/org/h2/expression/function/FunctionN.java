@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -67,7 +67,7 @@ public abstract class FunctionN extends OperationN implements NamedExpression {
      * @return the resulting value
      */
     protected Value getValue(SessionLocal session, Value v1, Value v2, Value v3) {
-        throw DbException.throwInternalError();
+        throw DbException.getInternalError();
     }
 
     @Override
@@ -104,7 +104,7 @@ public abstract class FunctionN extends OperationN implements NamedExpression {
         case ExpressionVisitor.GET_COLUMNS2:
             return true;
         default:
-            throw DbException.throwInternalError("type=" + visitor.getType());
+            throw DbException.getInternalError("type=" + visitor.getType());
         }
     }
 

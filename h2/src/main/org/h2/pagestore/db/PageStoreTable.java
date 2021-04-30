@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -110,9 +110,8 @@ public class PageStoreTable extends RegularTable {
             if (!(index instanceof PageDelegateIndex)) {
                 long rc = index.getRowCount(session);
                 if (rc != rowCount + offset) {
-                    DbException.throwInternalError(
-                            "rowCount expected " + (rowCount + offset) +
-                            " got " + rc + " " + getName() + "." + index.getName());
+                    throw DbException.getInternalError("rowCount expected " + (rowCount + offset) + " got " + rc + ' '
+                            + getName() + '.' + index.getName());
                 }
             }
         }
@@ -124,23 +123,19 @@ public class PageStoreTable extends RegularTable {
     }
 
     @Override
-    public Index getUniqueIndex() {
-        for (Index idx : indexes) {
-            if (idx.getIndexType().isUnique()) {
-                return idx;
-            }
-        }
-        return null;
-    }
-
-    @Override
     public ArrayList<Index> getIndexes() {
         return indexes;
     }
 
     @Override
-    public Index addIndex(SessionLocal session, String indexName, int indexId, IndexColumn[] cols, IndexType indexType,
-            boolean create, String indexComment) {
+    public Index addIndex(SessionLocal session, String indexName, int indexId, IndexColumn[] cols,
+            int uniqueColumnCount, IndexType indexType, boolean create, String indexComment) {
+        if (indexType.isSpatial()) {
+            if (session.isQuirksMode()) {
+                return null;
+            }
+            throw DbException.getUnsupportedException("MV_STORE=FALSE && SPATIAL INDEX");
+        }
         cols = prepareColumns(database, cols, indexType);
         boolean isSessionTemporary = isTemporary() && !isGlobalTemporary();
         if (!isSessionTemporary) {
@@ -162,31 +157,22 @@ public class PageStoreTable extends RegularTable {
                 mainIndex.setMainIndexColumn(mainIndexColumn);
                 index = new PageDelegateIndex(this, indexId, indexName,
                         indexType, mainIndex, create, session);
-            } else if (indexType.isSpatial()) {
-                index = new SpatialTreeIndex(this, indexId, indexName, cols,
-                        indexType, true, create, session);
             } else {
-                index = new PageBtreeIndex(this, indexId, indexName, cols,
-                        indexType, create, session);
+                index = new PageBtreeIndex(this, indexId, indexName, cols, uniqueColumnCount, indexType, create,
+                        session);
             }
         } else {
             if (indexType.isHash()) {
                 if (cols.length != 1) {
-                    throw DbException.getUnsupportedException(
-                            "hash indexes may index only one column");
+                    throw DbException.getUnsupportedException("hash indexes may index only one column");
                 }
-                if (indexType.isUnique()) {
-                    index = new HashIndex(this, indexId, indexName, cols,
-                            indexType);
+                if (uniqueColumnCount > 0) {
+                    index = new HashIndex(this, indexId, indexName, cols, indexType);
                 } else {
-                    index = new NonUniqueHashIndex(this, indexId, indexName,
-                            cols, indexType);
+                    index = new NonUniqueHashIndex(this, indexId, indexName, cols, indexType);
                 }
-            } else if (indexType.isSpatial()) {
-                index = new SpatialTreeIndex(this, indexId, indexName, cols,
-                        indexType, false, true, session);
             } else {
-                index = new TreeIndex(this, indexId, indexName, cols, indexType);
+                index = new TreeIndex(this, indexId, indexName, cols, uniqueColumnCount, indexType);
             }
         }
         if (index.needRebuild() && rowCount > 0) {
@@ -210,8 +196,7 @@ public class PageStoreTable extends RegularTable {
                 }
                 addRowsToIndex(session, buffer, index);
                 if (remaining != 0) {
-                    DbException.throwInternalError("rowcount remaining=" +
-                            remaining + " " + getName());
+                    throw DbException.getInternalError("rowcount remaining=" + remaining + ' ' + getName());
                 }
             } catch (DbException e) {
                 getSchema().freeUniqueName(indexName);

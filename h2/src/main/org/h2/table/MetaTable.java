@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -7,7 +7,6 @@ package org.h2.table;
 
 import java.util.ArrayList;
 
-import org.h2.engine.Mode;
 import org.h2.engine.SessionLocal;
 import org.h2.index.Index;
 import org.h2.index.IndexType;
@@ -17,7 +16,6 @@ import org.h2.result.Row;
 import org.h2.result.SearchRow;
 import org.h2.schema.Schema;
 import org.h2.util.StringUtils;
-import org.h2.value.DataType;
 import org.h2.value.TypeInfo;
 import org.h2.value.Value;
 import org.h2.value.ValueNull;
@@ -67,41 +65,29 @@ public abstract class MetaTable extends Table {
     }
 
     /**
-     * Creates columns.
+     * Creates a column with the specified name and character string data type.
      *
-     * @param names
-     *            the names of columns with optional space-separated data types
-     *            (VARCHAR by default).
-     * @return the columns
+     * @param name
+     *            the uppercase column name
+     * @return the column
      */
-    protected final Column[] createColumns(String... names) {
-        Column[] cols = new Column[names.length];
-        TypeInfo defaultType = database.getSettings().caseInsensitiveIdentifiers ? TypeInfo.TYPE_VARCHAR_IGNORECASE
-                : TypeInfo.TYPE_VARCHAR;
-        Mode mode = database.getMode();
-        for (int i = 0; i < names.length; i++) {
-            String nameType = names[i];
-            int idx = nameType.indexOf(' ');
-            TypeInfo dataType;
-            String name;
-            if (idx < 0) {
-                dataType = defaultType;
-                name = nameType;
-            } else {
-                String tName = nameType.substring(idx + 1);
-                DataType t = DataType.getTypeByName(tName, mode);
-                if (t != null) {
-                    dataType = TypeInfo.getTypeInfo(t.type);
-                } else {
-                    assert tName.endsWith(" ARRAY");
-                    dataType = TypeInfo.getTypeInfo(Value.ARRAY, -1L, 0, TypeInfo.getTypeInfo(
-                            DataType.getTypeByName(tName.substring(0, tName.length() - 6), mode).type));
-                }
-                name = nameType.substring(0, idx);
-            }
-            cols[i] = new Column(database.sysIdentifier(name), dataType);
-        }
-        return cols;
+    final Column column(String name) {
+        return new Column(database.sysIdentifier(name),
+                database.getSettings().caseInsensitiveIdentifiers ? TypeInfo.TYPE_VARCHAR_IGNORECASE
+                        : TypeInfo.TYPE_VARCHAR);
+    }
+
+    /**
+     * Creates a column with the specified name and data type.
+     *
+     * @param name
+     *            the uppercase column name
+     * @param type
+     *            the data type
+     * @return the column
+     */
+    protected final Column column(String name, TypeInfo type) {
+        return new Column(database.sysIdentifier(name), type);
     }
 
     @Override
@@ -110,9 +96,8 @@ public abstract class MetaTable extends Table {
     }
 
     @Override
-    public final Index addIndex(SessionLocal session, String indexName, int indexId,
-            IndexColumn[] cols, IndexType indexType, boolean create,
-            String indexComment) {
+    public final Index addIndex(SessionLocal session, String indexName, int indexId, IndexColumn[] cols,
+            int uniqueColumnCount, IndexType indexType, boolean create, String indexComment) {
         throw DbException.getUnsupportedException("META");
     }
 
@@ -239,7 +224,7 @@ public abstract class MetaTable extends Table {
 
     @Override
     public long getRowCount(SessionLocal session) {
-        throw DbException.throwInternalError(toString());
+        throw DbException.getInternalError(toString());
     }
 
     @Override
@@ -272,11 +257,6 @@ public abstract class MetaTable extends Table {
         // TODO re-use the index
         list.add(metaIndex);
         return list;
-    }
-
-    @Override
-    public final Index getUniqueIndex() {
-        return null;
     }
 
     @Override

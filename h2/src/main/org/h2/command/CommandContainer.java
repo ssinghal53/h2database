@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -60,9 +60,9 @@ public class CommandContainer extends Command {
         }
 
         @Override
-        public int getRowCount() {
+        public long getRowCount() {
             // Not required
-            return 0;
+            return 0L;
         }
 
         @Override
@@ -110,7 +110,7 @@ public class CommandContainer extends Command {
         }
     }
 
-    CommandContainer(SessionLocal session, String sql, Prepared prepared) {
+    public CommandContainer(SessionLocal session, String sql, Prepared prepared) {
         super(session, sql);
         prepared.setCommand(this);
         this.prepared = prepared;
@@ -230,7 +230,7 @@ public class CommandContainer extends Command {
                 expressionColumns.add(new ExpressionColumn(db, column));
             }
         } else {
-            throw DbException.throwInternalError();
+            throw DbException.getInternalError();
         }
         int columnCount = expressionColumns.size();
         if (columnCount == 0) {
@@ -247,7 +247,7 @@ public class CommandContainer extends Command {
     }
 
     @Override
-    public ResultInterface query(int maxrows) {
+    public ResultInterface query(long maxrows) {
         recompileIfRequired();
         setProgress(DatabaseEventListener.STATE_STATEMENT_START);
         start();

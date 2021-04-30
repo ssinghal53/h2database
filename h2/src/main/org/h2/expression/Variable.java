@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -65,7 +65,7 @@ public final class Variable extends Operation0 {
         case ExpressionVisitor.DETERMINISTIC:
             return false;
         default:
-            throw DbException.throwInternalError("type="+visitor.getType());
+            throw DbException.getInternalError("type="+visitor.getType());
         }
     }
 

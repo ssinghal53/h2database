@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -19,6 +19,7 @@ import org.h2.util.LegacyDateTimeUtils;
 import org.h2.util.SmallLRUCache;
 import org.h2.util.TempFileDeleter;
 import org.h2.value.CompareMode;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
 import org.h2.value.ValueArray;
 import org.h2.value.ValueBigint;
@@ -67,7 +68,7 @@ public class TestDataPage extends TestBase implements DataHandler {
     }
 
     private static void testPerformance() {
-        Data data = Data.create(null, 1024, false);
+        Data data = Data.create(null, 1024);
         for (int j = 0; j < 4; j++) {
             long time = System.nanoTime();
             for (int i = 0; i < 100000; i++) {
@@ -203,29 +204,19 @@ public class TestDataPage extends TestBase implements DataHandler {
     }
 
     private void testValue(Value v) {
-        testValue(v, false);
-        switch (v.getValueType()) {
-        case Value.DATE:
-        case Value.TIME:
-        case Value.TIMESTAMP:
-            testValue(v, true);
-        }
-    }
-
-    private void testValue(Value v, boolean storeLocalTime) {
-        Data data = Data.create(null, 1024, storeLocalTime);
+        Data data = Data.create(null, 1024);
         data.checkCapacity((int) v.getType().getPrecision());
         data.writeValue(v);
         data.writeInt(123);
         data.reset();
-        Value v2 = data.readValue();
+        Value v2 = data.readValue(v.getType());
         assertEquals(v.getValueType(), v2.getValueType());
         assertEquals(0, v.compareTo(v2, null, compareMode));
         assertEquals(123, data.readInt());
     }
 
     private void testAll() {
-        Data page = Data.create(this, 128, false);
+        Data page = Data.create(this, 128);
 
         char[] data = new char[0x10000];
         for (int i = 0; i < data.length; i++) {
@@ -252,11 +243,11 @@ public class TestDataPage extends TestBase implements DataHandler {
 
         trace(page.readString());
         trace(page.readString());
-        trace(page.readValue().getInt());
-        trace(page.readValue().getString());
-        trace("" + page.readValue().getFloat());
-        trace("" + page.readValue().getDouble());
-        trace(page.readValue().toString());
+        trace(page.readValue(TypeInfo.TYPE_INTEGER).getInt());
+        trace(page.readValue(TypeInfo.TYPE_VARCHAR).getString());
+        trace("" + page.readValue(TypeInfo.TYPE_REAL).getFloat());
+        trace("" + page.readValue(TypeInfo.TYPE_DOUBLE).getDouble());
+        trace(page.readValue(TypeInfo.TYPE_VARCHAR).toString());
         page.reset();
 
         page.writeInt(0);

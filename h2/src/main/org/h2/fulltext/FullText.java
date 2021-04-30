@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -537,7 +537,8 @@ public class FullText {
     protected static void removeAllTriggers(Connection conn, String prefix)
             throws SQLException {
         Statement stat = conn.createStatement();
-        ResultSet rs = stat.executeQuery("SELECT * FROM INFORMATION_SCHEMA.TRIGGERS");
+        ResultSet rs = stat.executeQuery(
+                "SELECT DISTINCT TRIGGER_SCHEMA, TRIGGER_NAME FROM INFORMATION_SCHEMA.TRIGGERS");
         Statement stat2 = conn.createStatement();
         while (rs.next()) {
             String schema = rs.getString("TRIGGER_SCHEMA");
@@ -962,8 +963,8 @@ public class FullText {
                 throws SQLException {
             try (Statement stat = conn.createStatement()) {
                 ResultSet rs = stat.executeQuery(
-                                "SELECT `VALUE` FROM INFORMATION_SCHEMA.SETTINGS" +
-                                " WHERE NAME = 'MV_STORE'");
+                                "SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS" +
+                                " WHERE SETTING_NAME = 'MV_STORE'");
                 return rs.next() && "true".equals(rs.getString(1));
             }
         }

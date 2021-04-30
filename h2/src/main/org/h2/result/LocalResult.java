@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -35,15 +35,15 @@ public class LocalResult implements ResultInterface, ResultTarget {
     private int visibleColumnCount;
     private int resultColumnCount;
     private Expression[] expressions;
-    private int rowId, rowCount;
+    private long rowId, rowCount;
     private ArrayList<Value[]> rows;
     private SortOrder sort;
     // HashSet cannot be used here, because we need to compare values of
     // different type or scale properly.
     private TreeMap<Value, Value[]> distinctRows;
     private Value[] currentRow;
-    private int offset;
-    private int limit = -1;
+    private long offset;
+    private long limit = -1;
     private boolean fetchPercent;
     private SortOrder withTiesSortOrder;
     private boolean limitsWereApplied;
@@ -244,7 +244,7 @@ public class LocalResult implements ResultInterface, ResultTarget {
      */
     public void removeDistinct(Value[] values) {
         if (!distinct) {
-            DbException.throwInternalError();
+            throw DbException.getInternalError();
         }
         assert values.length == visibleColumnCount;
         if (distinctRows != null) {
@@ -278,7 +278,7 @@ public class LocalResult implements ResultInterface, ResultTarget {
                 if (external != null) {
                     currentRow = external.next();
                 } else {
-                    currentRow = rows.get(rowId);
+                    currentRow = rows.get((int) rowId);
                 }
                 return true;
             }
@@ -288,7 +288,7 @@ public class LocalResult implements ResultInterface, ResultTarget {
     }
 
     @Override
-    public int getRowId() {
+    public long getRowId() {
         return rowId;
     }
 
@@ -389,7 +389,14 @@ public class LocalResult implements ResultInterface, ResultTarget {
             if (sort != null && limit != 0 && !limitsWereApplied) {
                 boolean withLimit = limit > 0 && withTiesSortOrder == null;
                 if (offset > 0 || withLimit) {
-                    sort.sort(rows, offset, withLimit ? limit : rows.size());
+                    int endExclusive = rows.size();
+                    if (offset < endExclusive) {
+                        int fromInclusive = (int) offset;
+                        if (withLimit && limit < endExclusive - fromInclusive) {
+                            endExclusive = fromInclusive + (int) limit;
+                        }
+                        sort.sort(rows, fromInclusive, endExclusive);
+                    }
                 } else {
                     sort.sort(rows);
                 }
@@ -403,8 +410,8 @@ public class LocalResult implements ResultInterface, ResultTarget {
         if (limitsWereApplied) {
             return;
         }
-        int offset = Math.max(this.offset, 0);
-        int limit = this.limit;
+        long offset = Math.max(this.offset, 0);
+        long limit = this.limit;
         if (offset == 0 && limit < 0 && !fetchPercent || rowCount == 0) {
             return;
         }
@@ -413,11 +420,11 @@ public class LocalResult implements ResultInterface, ResultTarget {
                 throw DbException.getInvalidValueException("FETCH PERCENT", limit);
             }
             // Oracle rounds percent up, do the same for now
-            limit = (int) (((long) limit * rowCount + 99) / 100);
+            limit = (limit * rowCount + 99) / 100;
         }
         boolean clearAll = offset >= rowCount || limit == 0;
         if (!clearAll) {
-            int remaining = rowCount - offset;
+            long remaining = rowCount - offset;
             limit = limit < 0 ? remaining : Math.min(remaining, limit);
             if (offset == 0 && remaining <= limit) {
                 return;
@@ -432,7 +439,7 @@ public class LocalResult implements ResultInterface, ResultTarget {
                 rows.clear();
                 return;
             }
-            int to = offset + limit;
+            int to = (int) (offset + limit);
             if (withTiesSortOrder != null) {
                 Value[] expected = rows.get(to - 1);
                 while (to < rows.size() && withTiesSortOrder.compare(expected, rows.get(to)) == 0) {
@@ -442,7 +449,7 @@ public class LocalResult implements ResultInterface, ResultTarget {
             }
             if (offset != 0 || to != rows.size()) {
                 // avoid copying the whole array for each row
-                rows = new ArrayList<>(rows.subList(offset, to));
+                rows = new ArrayList<>(rows.subList((int) offset, to));
             }
         } else {
             if (clearAll) {
@@ -454,7 +461,7 @@ public class LocalResult implements ResultInterface, ResultTarget {
         }
     }
 
-    private void trimExternal(int offset, int limit) {
+    private void trimExternal(long offset, long limit) {
         ResultExternal temp = external;
         external = null;
         temp.reset();
@@ -486,7 +493,7 @@ public class LocalResult implements ResultInterface, ResultTarget {
     }
 
     @Override
-    public int getRowCount() {
+    public long getRowCount() {
         return rowCount;
     }
 
@@ -505,7 +512,7 @@ public class LocalResult implements ResultInterface, ResultTarget {
      *
      * @param limit the limit (-1 means no limit, 0 means no rows)
      */
-    public void setLimit(int limit) {
+    public void setLimit(long limit) {
         this.limit = limit;
     }
 
@@ -574,8 +581,8 @@ public class LocalResult implements ResultInterface, ResultTarget {
     }
 
     @Override
-    public boolean isAutoIncrement(int i) {
-        return expressions[i].isAutoIncrement();
+    public boolean isIdentity(int i) {
+        return expressions[i].isIdentity();
     }
 
     /**
@@ -583,7 +590,7 @@ public class LocalResult implements ResultInterface, ResultTarget {
      *
      * @param offset the offset
      */
-    public void setOffset(int offset) {
+    public void setOffset(long offset) {
         this.offset = offset;
     }
 

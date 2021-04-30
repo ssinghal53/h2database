@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -44,7 +44,7 @@ public class HashIndex extends Index {
     private final ArrayList<Long> nullRows = new ArrayList<>();
 
     public HashIndex(PageStoreTable table, int id, String indexName, IndexColumn[] columns, IndexType indexType) {
-        super(table, id, indexName, columns, indexType);
+        super(table, id, indexName, columns, 1, indexType);
         Column column = columns[0].column;
         indexColumn = column.getColumnId();
         totalOrdering = DataType.hasTotalOrdering(column.getType().getValueType());
@@ -92,7 +92,7 @@ public class HashIndex extends Index {
     public Cursor find(SessionLocal session, SearchRow first, SearchRow last) {
         if (first == null || last == null) {
             // TODO hash index: should additionally check if values are the same
-            throw DbException.throwInternalError(first + " " + last);
+            throw DbException.getInternalError(first + " " + last);
         }
         Value v = first.getValue(indexColumn);
         if (v == ValueNull.INSTANCE

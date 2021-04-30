@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -26,6 +26,7 @@ import org.h2.store.InDoubtTransaction;
 import org.h2.util.IntArray;
 import org.h2.util.IntIntHashMap;
 import org.h2.util.Utils;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
 import org.h2.value.ValueNull;
 
@@ -227,8 +228,7 @@ public class PageLog {
                     loopCount = 0;
                     loopDetect *= 2;
                 } else if (first != 0 && first == t.getPos()) {
-                    throw DbException.throwInternalError(
-                            "endless loop at " + t);
+                    throw DbException.getInternalError("endless loop at " + t);
                 }
                 t.free(currentDataPage);
                 firstTrunkPage = t.getNextTrunk();
@@ -466,7 +466,7 @@ public class PageLog {
         int columnCount = data.readVarInt();
         Value[] values = new Value[columnCount];
         for (int i = 0; i < columnCount; i++) {
-            values[i] = data.readValue();
+            values[i] = data.readValue(TypeInfo.TYPE_UNKNOWN);
         }
         return Row.get(values, SearchRow.MEMORY_CALCULATE, key);
     }
@@ -496,7 +496,7 @@ public class PageLog {
             trace.debug("log undo " + pageId);
         }
         if (page == null) {
-            DbException.throwInternalError("Undo entry not written");
+            throw DbException.getInternalError("Undo entry not written");
         }
         undo.set(pageId);
         undoAll.set(pageId);
@@ -565,7 +565,7 @@ public class PageLog {
         buffer.writeByte((byte) COMMIT);
         buffer.writeVarInt(sessionId);
         write(buffer);
-        if (store.getDatabase().getFlushOnEachCommit()) {
+        if (store.getFlushOnEachCommit()) {
             flush();
         }
     }
@@ -600,7 +600,7 @@ public class PageLog {
         // store it on a separate log page
         flushOut();
         pageOut.fillPage();
-        if (store.getDatabase().getFlushOnEachCommit()) {
+        if (store.getFlushOnEachCommit()) {
             flush();
         }
     }
@@ -626,7 +626,7 @@ public class PageLog {
         data.writeVarInt(columns);
         int size = 0;
         for (Value v : row.getValueList()) {
-            size += data.getValueLen(v);
+            size += Data.getValueLen(v);
         }
         data.checkCapacity(size);
         if (session.isRedoLogBinaryEnabled()) {
@@ -747,7 +747,7 @@ public class PageLog {
             Page p = store.getPage(trunkPage);
             PageStreamTrunk t = (PageStreamTrunk) p;
             if (t == null) {
-                throw DbException.throwInternalError(
+                throw DbException.getInternalError(
                         "log.removeUntil not found: " + firstDataPageToKeep + " last " + last);
             }
             logKey = t.getLogKey();

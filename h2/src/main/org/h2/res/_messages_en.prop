@@ -45,6 +45,7 @@
 90002=Method is only allowed for a query. Use execute or executeUpdate instead of executeQuery
 90003=Hexadecimal string with odd number of characters: {0}
 90004=Hexadecimal string contains non-hex character: {0}
+90005=Invalid trigger flags: {0}
 90006=Sequence {0} has run out of numbers
 90007=The object is already closed
 90008=Invalid value {0} for parameter {1}
@@ -193,6 +194,7 @@
 90154=Generated column {0} cannot be assigned
 90155=Generated column {0} cannot be updatable by a referential constraint with {1} clause
 90156=Column alias is not specified for expression {0}
+90157=Column index {0} in GROUP BY clause is outside valid range 1 - {1}
 HY000=General error: {0}
 HY004=Unknown data type: {0}
 HYC00=Feature not supported: {0}

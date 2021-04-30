@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -16,6 +16,7 @@ import org.h2.api.ErrorCode;
 import org.h2.command.Prepared;
 import org.h2.command.query.AllColumnsForPlan;
 import org.h2.constraint.Constraint;
+import org.h2.constraint.Constraint.Type;
 import org.h2.engine.CastDataProvider;
 import org.h2.engine.Constants;
 import org.h2.engine.DbObject;
@@ -151,14 +152,14 @@ public abstract class Table extends SchemaObject {
      * @param indexName the name of the index
      * @param indexId the id
      * @param cols the index columns
+     * @param uniqueColumnCount the count of unique columns
      * @param indexType the index type
      * @param create whether this is a new index
      * @param indexComment the comment
      * @return the index
      */
-    public abstract Index addIndex(SessionLocal session, String indexName,
-            int indexId, IndexColumn[] cols, IndexType indexType,
-            boolean create, String indexComment);
+    public abstract Index addIndex(SessionLocal session, String indexName, int indexId, IndexColumn[] cols,
+            int uniqueColumnCount, IndexType indexType, boolean create, String indexComment);
 
     /**
      * Get the given row.
@@ -287,13 +288,6 @@ public abstract class Table extends SchemaObject {
     }
 
     /**
-     * Get any unique index for this table if one exists.
-     *
-     * @return a unique index
-     */
-    public abstract Index getUniqueIndex();
-
-    /**
      * Get all indexes for this table.
      *
      * @return the list of indexes
@@ -396,7 +390,7 @@ public abstract class Table extends SchemaObject {
 
     @Override
     public String getCreateSQLForCopy(Table table, String quotedName) {
-        throw DbException.throwInternalError(toString());
+        throw DbException.getInternalError(toString());
     }
 
     /**
@@ -485,8 +479,8 @@ public abstract class Table extends SchemaObject {
                 throw DbException.get(ErrorCode.DUPLICATE_COLUMN_NAME_1, columnName);
             }
         }
-        rowFactory = database.getRowFactory().createRowFactory(database, database.getCompareMode(),
-                database.getMode(), database, columns, null);
+        rowFactory = database.getRowFactory().createRowFactory(database, database.getCompareMode(), database, columns,
+                null, false);
     }
 
     /**
@@ -1234,12 +1228,13 @@ public abstract class Table extends SchemaObject {
      * @param checkExisting true if existing rows must be checked during this
      *            call
      */
-    public void setCheckForeignKeyConstraints(SessionLocal session, boolean enabled,
-            boolean checkExisting) {
+    public void setCheckForeignKeyConstraints(SessionLocal session, boolean enabled, boolean checkExisting) {
         if (enabled && checkExisting) {
             if (constraints != null) {
                 for (Constraint c : constraints) {
-                    c.checkExistingData(session);
+                    if (c.getConstraintType() == Type.REFERENTIAL) {
+                        c.checkExistingData(session);
+                    }
                 }
             }
         }

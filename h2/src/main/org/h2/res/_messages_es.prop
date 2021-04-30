@@ -45,6 +45,7 @@
 90002=Metodo permitido unicamente en un query. Use execute ó executeUpdate en lugar de executeQuery
 90003=Cadena Hexadecimal con cantidad impar de caracteres: {0}
 90004=Cadena Hexadecimal contiene caracteres invalidos: {0}
+90005=#Invalid trigger flags: {0}
 90006=#Sequence {0} has run out of numbers
 90007=El objeto ya está cerrado
 90008=Valor Invalido {0} para el parametro {1}
@@ -193,6 +194,7 @@
 90154=#Generated column {0} cannot be assigned
 90155=#Generated column {0} cannot be updatable by a referential constraint with {1} clause
 90156=#Column alias is not specified for expression {0}
+90157=#Column index {0} in GROUP BY clause is outside valid range 1 - {1}
 HY000=Error General : {0}
 HY004=Tipo de dato desconocido : {0}
 HYC00=Caracteristica no soportada: {0}

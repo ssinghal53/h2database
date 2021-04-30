@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -86,7 +86,7 @@ public class CreateTrigger extends SchemaCommand {
 
     @Override
     public long update() {
-        session.commit(true);
+        session.getUser().checkAdmin();
         Database db = session.getDatabase();
         if (getSchema().findTrigger(triggerName) != null) {
             if (ifNotExists) {
@@ -96,10 +96,18 @@ public class CreateTrigger extends SchemaCommand {
                     ErrorCode.TRIGGER_ALREADY_EXISTS_1,
                     triggerName);
         }
-        if ((typeMask & Trigger.SELECT) == Trigger.SELECT && rowBased) {
-            throw DbException.get(
-                    ErrorCode.TRIGGER_SELECT_AND_ROW_BASED_NOT_SUPPORTED,
-                    triggerName);
+        if ((typeMask & Trigger.SELECT) != 0) {
+            if (rowBased) {
+                throw DbException.get(ErrorCode.INVALID_TRIGGER_FLAGS_1, "SELECT + FOR EACH ROW");
+            }
+            if (onRollback) {
+                throw DbException.get(ErrorCode.INVALID_TRIGGER_FLAGS_1, "SELECT + ROLLBACK");
+            }
+        } else if ((typeMask & (Trigger.INSERT | Trigger.UPDATE | Trigger.DELETE)) == 0) {
+            if (onRollback) {
+                throw DbException.get(ErrorCode.INVALID_TRIGGER_FLAGS_1, "(!INSERT & !UPDATE & !DELETE) + ROLLBACK");
+            }
+            throw DbException.getInternalError();
         }
         int id = getObjectId();
         Table table = getSchema().getTableOrView(session, tableName);

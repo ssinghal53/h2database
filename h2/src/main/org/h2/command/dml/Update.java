@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -16,7 +16,7 @@ import org.h2.engine.Right;
 import org.h2.engine.SessionLocal;
 import org.h2.expression.Expression;
 import org.h2.expression.ExpressionVisitor;
-import org.h2.result.ResultInterface;
+import org.h2.message.DbException;
 import org.h2.result.ResultTarget;
 import org.h2.result.Row;
 import org.h2.result.RowList;
@@ -31,41 +31,24 @@ import org.h2.value.ValueNull;
  * This class represents the statement
  * UPDATE
  */
-public final class Update extends DataChangeStatement {
-
-    private Expression condition;
-    private TableFilter targetTableFilter;// target of update
-
-    /** The limit expression as specified in the LIMIT clause. */
-    private Expression limitExpr;
+public final class Update extends FilteredDataChangeStatement {
 
     private SetClauseList setClauseList;
 
     private Insert onDuplicateKeyInsert;
 
+    private TableFilter fromTableFilter;
+
     public Update(SessionLocal session) {
         super(session);
     }
 
-    @Override
-    public Table getTable() {
-        return targetTableFilter.getTable();
-    }
-
-    public void setTableFilter(TableFilter tableFilter) {
-        this.targetTableFilter = tableFilter;
-    }
-
-    public void setCondition(Expression condition) {
-        this.condition = condition;
-    }
-
-    public Expression getCondition( ) {
-        return this.condition;
-    }
-
     public void setSetClauseList(SetClauseList setClauseList) {
         this.setClauseList = setClauseList;
+    }
+
+    public void setFromTableFilter(TableFilter tableFilter) {
+        this.fromTableFilter = tableFilter;
     }
 
     @Override
@@ -74,43 +57,37 @@ public final class Update extends DataChangeStatement {
         targetTableFilter.reset();
         Table table = targetTableFilter.getTable();
         try (RowList rows = new RowList(session, table)) {
-            session.getUser().checkRight(table, Right.UPDATE);
+            session.getUser().checkTableRight(table, Right.UPDATE);
             table.fire(session, Trigger.UPDATE, true);
             table.lock(session, true, false);
             // get the old rows, compute the new rows
             setCurrentRowNumber(0);
             long count = 0;
-            int limitRows = -1;
-            if (limitExpr != null) {
-                Value v = limitExpr.getValue(session);
-                if (v != ValueNull.INSTANCE) {
-                    limitRows = v.getInt();
+            long limitRows = -1;
+            if (fetchExpr != null) {
+                Value v = fetchExpr.getValue(session);
+                if (v == ValueNull.INSTANCE || (limitRows = v.getLong()) < 0) {
+                    throw DbException.getInvalidValueException("FETCH", v);
                 }
             }
-            while (targetTableFilter.next()) {
-                setCurrentRowNumber(count+1);
-                if (limitRows >= 0 && count >= limitRows) {
-                    break;
-                }
-                if (condition == null || condition.getBooleanValue(session)) {
-                    Row oldRow = targetTableFilter.get();
-                    if (table.isMVStore()) {
-                        Row lockedRow = table.lockRow(session, oldRow);
-                        if (lockedRow == null) {
+            while (nextRow(limitRows, count)) {
+                Row oldRow = targetTableFilter.get();
+                if (table.isMVStore()) {
+                    Row lockedRow = table.lockRow(session, oldRow);
+                    if (lockedRow == null) {
+                        continue;
+                    }
+                    if (!oldRow.hasSharedData(lockedRow)) {
+                        oldRow = lockedRow;
+                        targetTableFilter.set(oldRow);
+                        if (condition != null && !condition.getBooleanValue(session)) {
                             continue;
                         }
-                        if (!oldRow.hasSharedData(lockedRow)) {
-                            oldRow = lockedRow;
-                            targetTableFilter.set(oldRow);
-                            if (condition != null && !condition.getBooleanValue(session)) {
-                                continue;
-                            }
-                        }
                     }
-                    if (setClauseList.prepareUpdate(table, session, deltaChangeCollector, deltaChangeCollectionMode,
-                            rows, oldRow, onDuplicateKeyInsert != null)) {
-                        count++;
-                    }
+                }
+                if (setClauseList.prepareUpdate(table, session, deltaChangeCollector, deltaChangeCollectionMode,
+                        rows, oldRow, onDuplicateKeyInsert != null)) {
+                    count++;
                 }
             }
             doUpdate(this, session, table, rows);
@@ -142,42 +119,40 @@ public final class Update extends DataChangeStatement {
     public String getPlanSQL(int sqlFlags) {
         StringBuilder builder = new StringBuilder("UPDATE ");
         targetTableFilter.getPlanSQL(builder, false, sqlFlags);
+        if (fromTableFilter != null) {
+            builder.append("\nFROM ");
+            fromTableFilter.getPlanSQL(builder, false, sqlFlags);
+        }
         setClauseList.getSQL(builder, sqlFlags);
-        if (condition != null) {
-            builder.append("\nWHERE ");
-            condition.getUnenclosedSQL(builder, sqlFlags);
-        }
-        if (limitExpr != null) {
-            builder.append("\nLIMIT ");
-            limitExpr.getUnenclosedSQL(builder, sqlFlags);
-        }
+        appendFilterCondition(builder, sqlFlags);
         return builder.toString();
     }
 
     @Override
     public void prepare() {
+        if (fromTableFilter != null) {
+            targetTableFilter.addJoin(fromTableFilter, false, null);
+        }
         if (condition != null) {
             condition.mapColumns(targetTableFilter, 0, Expression.MAP_INITIAL);
+            if (fromTableFilter != null) {
+                condition.mapColumns(fromTableFilter, 0, Expression.MAP_INITIAL);
+            }
             condition = condition.optimizeCondition(session);
             if (condition != null) {
                 condition.createIndexConditions(session, targetTableFilter);
             }
         }
-        setClauseList.mapAndOptimize(session, targetTableFilter, null);
-        TableFilter[] filters = new TableFilter[] { targetTableFilter };
+        setClauseList.mapAndOptimize(session, targetTableFilter, fromTableFilter);
+        TableFilter[] filters = null;
+        if (fromTableFilter == null) {
+            filters = new TableFilter[] { targetTableFilter };
+        } else {
+            filters = new TableFilter[] { targetTableFilter, fromTableFilter };
+        }
         PlanItem item = targetTableFilter.getBestPlanItem(session, filters, 0, new AllColumnsForPlan(filters));
         targetTableFilter.setPlanItem(item);
         targetTableFilter.prepare();
-    }
-
-    @Override
-    public boolean isTransactional() {
-        return true;
-    }
-
-    @Override
-    public ResultInterface queryMeta() {
-        return null;
     }
 
     @Override
@@ -188,15 +163,6 @@ public final class Update extends DataChangeStatement {
     @Override
     public String getStatementName() {
         return "UPDATE";
-    }
-
-    public void setLimit(Expression limit) {
-        this.limitExpr = limit;
-    }
-
-    @Override
-    public boolean isCacheable() {
-        return true;
     }
 
     @Override

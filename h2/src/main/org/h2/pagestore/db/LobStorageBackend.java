@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -31,9 +31,10 @@ import org.h2.util.IOUtils;
 import org.h2.util.MathUtils;
 import org.h2.util.Utils;
 import org.h2.value.Value;
+import org.h2.value.ValueBlob;
+import org.h2.value.ValueClob;
 import org.h2.value.ValueLob;
-import org.h2.value.ValueLobDatabase;
-import org.h2.value.ValueLobInMemory;
+import org.h2.value.lob.LobDataDatabase;
 
 /**
  * This class stores LOB objects in the database, in tables. This is the
@@ -102,98 +103,82 @@ public class LobStorageBackend implements LobStorageInterface {
     private final CompressTool compress = CompressTool.getInstance();
     private long[] hashBlocks;
 
-    private boolean init;
 
     public LobStorageBackend(Database database) {
         this.database = database;
-    }
-
-    @Override
-    public void init() {
-        if (init) {
-            return;
-        }
-        synchronized (database) {
-            // have to check this again or we might miss an update on another
-            // thread
-            if (init) {
-                return;
-            }
-            init = true;
-            String systemUserName = database.getSystemUser().getName();
-            SessionLocal session = database.getLobSession();
-            session.getTrace().setLevel(TraceSystem.OFF);
-            conn = new JdbcConnection(session, systemUserName, Constants.CONN_URL_INTERNAL);
-            session = database.getSystemSession();
-            session.getTrace().setLevel(TraceSystem.OFF);
-            JdbcConnection initConn = new JdbcConnection(session, systemUserName, Constants.CONN_URL_INTERNAL);
-            try {
-                Statement stat = initConn.createStatement();
-                // stat.execute("SET UNDO_LOG 0");
-                // stat.execute("SET REDO_LOG_BINARY 0");
-                boolean create = true, update = false;
-                PreparedStatement prep = initConn.prepareStatement(
-                        "SELECT ZERO() FROM INFORMATION_SCHEMA.COLUMNS WHERE " +
-                        "TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME=?");
+        String systemUserName = database.getSystemUser().getName();
+        SessionLocal session = database.getLobSession();
+        session.getTrace().setLevel(TraceSystem.OFF);
+        conn = new JdbcConnection(session, systemUserName, Constants.CONN_URL_INTERNAL);
+        session = database.getSystemSession();
+        session.getTrace().setLevel(TraceSystem.OFF);
+        JdbcConnection initConn = new JdbcConnection(session, systemUserName, Constants.CONN_URL_INTERNAL);
+        try {
+            Statement stat = initConn.createStatement();
+            // stat.execute("SET UNDO_LOG 0");
+            // stat.execute("SET REDO_LOG_BINARY 0");
+            boolean create = true, update = false;
+            PreparedStatement prep = initConn.prepareStatement(
+                    "SELECT ZERO() FROM INFORMATION_SCHEMA.COLUMNS WHERE " +
+                    "TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME=?");
+            prep.setString(1, "INFORMATION_SCHEMA");
+            prep.setString(2, "LOB_MAP");
+            prep.setString(3, "POS");
+            ResultSet rs;
+            rs = prep.executeQuery();
+            if (rs.next()) {
+                prep = initConn.prepareStatement(
+                        "SELECT ZERO() FROM INFORMATION_SCHEMA.TABLES WHERE " +
+                        "TABLE_SCHEMA=? AND TABLE_NAME=?");
                 prep.setString(1, "INFORMATION_SCHEMA");
-                prep.setString(2, "LOB_MAP");
-                prep.setString(3, "POS");
-                ResultSet rs;
+                prep.setString(2, "LOB_DATA");
                 rs = prep.executeQuery();
                 if (rs.next()) {
-                    prep = initConn.prepareStatement(
-                            "SELECT ZERO() FROM INFORMATION_SCHEMA.TABLES WHERE " +
-                            "TABLE_SCHEMA=? AND TABLE_NAME=?");
+                    create = false;
+                    prep = initConn.prepareStatement("SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE "
+                            + "TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME=?");
                     prep.setString(1, "INFORMATION_SCHEMA");
                     prep.setString(2, "LOB_DATA");
+                    prep.setString(3, "DATA");
                     rs = prep.executeQuery();
-                    if (rs.next()) {
-                        create = false;
-                        prep = initConn.prepareStatement("SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE "
-                                + "TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME=?");
-                        prep.setString(1, "INFORMATION_SCHEMA");
-                        prep.setString(2, "LOB_DATA");
-                        prep.setString(3, "DATA");
-                        rs = prep.executeQuery();
-                        rs.next();
-                        if ("BINARY".equals(rs.getString(1))) {
-                            update = true;
-                        }
+                    rs.next();
+                    if ("BINARY".equals(rs.getString(1))) {
+                        update = true;
                     }
                 }
-                if (create) {
-                    stat.execute("CREATE CACHED TABLE IF NOT EXISTS " + LOBS +
-                            "(ID BIGINT PRIMARY KEY, BYTE_COUNT BIGINT, `TABLE` INT) HIDDEN");
-                    stat.execute("CREATE INDEX IF NOT EXISTS " +
-                            "INFORMATION_SCHEMA.INDEX_LOB_TABLE ON " +
-                            LOBS + "(`TABLE`)");
-                    stat.execute("CREATE CACHED TABLE IF NOT EXISTS " + LOB_MAP +
-                            "(LOB BIGINT, SEQ INT, POS BIGINT, HASH INT, " +
-                            "BLOCK BIGINT, PRIMARY KEY(LOB, SEQ)) HIDDEN");
-                    stat.execute("ALTER TABLE " + LOB_MAP +
-                            " RENAME TO " + LOB_MAP + " HIDDEN");
-                    stat.execute("ALTER TABLE " + LOB_MAP +
-                            " ADD IF NOT EXISTS POS BIGINT BEFORE HASH");
-                    // TODO the column name OFFSET was used in version 1.3.156,
-                    // so this can be remove in a later version
-                    stat.execute("ALTER TABLE " + LOB_MAP +
-                            " DROP COLUMN IF EXISTS \"OFFSET\"");
-                    stat.execute("CREATE INDEX IF NOT EXISTS " +
-                            "INFORMATION_SCHEMA.INDEX_LOB_MAP_DATA_LOB ON " +
-                            LOB_MAP + "(BLOCK, LOB)");
-                    stat.execute("CREATE CACHED TABLE IF NOT EXISTS " +
-                            LOB_DATA +
-                            "(BLOCK BIGINT PRIMARY KEY, COMPRESSED INT, DATA VARBINARY) HIDDEN");
-                } else if (update) {
-                    stat.execute("ALTER TABLE " + LOB_DATA + " ALTER COLUMN DATA SET DATA TYPE VARBINARY");
-                }
-                rs = stat.executeQuery("SELECT MAX(BLOCK) FROM " + LOB_DATA);
-                rs.next();
-                nextBlock = rs.getLong(1) + 1;
-                stat.close();
-            } catch (SQLException e) {
-                throw DbException.convert(e);
             }
+            if (create) {
+                stat.execute("CREATE CACHED TABLE IF NOT EXISTS " + LOBS +
+                        "(ID BIGINT PRIMARY KEY, BYTE_COUNT BIGINT, `TABLE` INT) HIDDEN");
+                stat.execute("CREATE INDEX IF NOT EXISTS " +
+                        "INFORMATION_SCHEMA.INDEX_LOB_TABLE ON " +
+                        LOBS + "(`TABLE`)");
+                stat.execute("CREATE CACHED TABLE IF NOT EXISTS " + LOB_MAP +
+                        "(LOB BIGINT, SEQ INT, POS BIGINT, HASH INT, " +
+                        "BLOCK BIGINT, PRIMARY KEY(LOB, SEQ)) HIDDEN");
+                stat.execute("ALTER TABLE " + LOB_MAP +
+                        " RENAME TO " + LOB_MAP + " HIDDEN");
+                stat.execute("ALTER TABLE " + LOB_MAP +
+                        " ADD IF NOT EXISTS POS BIGINT BEFORE HASH");
+                // TODO the column name OFFSET was used in version 1.3.156,
+                // so this can be remove in a later version
+                stat.execute("ALTER TABLE " + LOB_MAP +
+                        " DROP COLUMN IF EXISTS \"OFFSET\"");
+                stat.execute("CREATE INDEX IF NOT EXISTS " +
+                        "INFORMATION_SCHEMA.INDEX_LOB_MAP_DATA_LOB ON " +
+                        LOB_MAP + "(BLOCK, LOB)");
+                stat.execute("CREATE CACHED TABLE IF NOT EXISTS " +
+                        LOB_DATA +
+                        "(BLOCK BIGINT PRIMARY KEY, COMPRESSED INT, DATA VARBINARY) HIDDEN");
+            } else if (update) {
+                stat.execute("ALTER TABLE " + LOB_DATA + " ALTER COLUMN DATA SET DATA TYPE VARBINARY");
+            }
+            rs = stat.executeQuery("SELECT MAX(BLOCK) FROM " + LOB_DATA);
+            rs.next();
+            nextBlock = rs.getLong(1) + 1;
+            stat.close();
+        } catch (SQLException e) {
+            throw DbException.convert(e);
         }
     }
 
@@ -215,7 +200,6 @@ public class LobStorageBackend implements LobStorageInterface {
 
     @Override
     public void removeAllForTable(int tableId) {
-        init();
         try {
             String sql = "SELECT ID FROM " + LOBS + " WHERE `TABLE` = ?";
             PreparedStatement prep = prepare(sql);
@@ -293,7 +277,7 @@ public class LobStorageBackend implements LobStorageInterface {
 
     @Override
     public void removeLob(ValueLob lob) {
-        removeLob(((ValueLobDatabase)lob).getLobId());
+        removeLob(((LobDataDatabase)lob.getLobData()).getLobId());
     }
 
     private void removeLob(long lobId) {
@@ -344,9 +328,13 @@ public class LobStorageBackend implements LobStorageInterface {
     }
 
     @Override
+    public InputStream getInputStream(long lobId, int tableId, long byteCount) throws IOException {
+        return getInputStream(lobId, byteCount);
+    }
+
+    @Override
     public InputStream getInputStream(long lobId, long byteCount) throws IOException {
         try {
-            init();
             assertNotHolds(conn.getSession());
             // see locking discussion at the top
             synchronized (database) {
@@ -408,11 +396,8 @@ public class LobStorageBackend implements LobStorageInterface {
                     small = new byte[0];
                 }
                 if (small != null) {
-                    // For a BLOB, precision is length in bytes.
-                    // For a CLOB, precision is length in chars
-                    long precision = countingReaderForClob == null ?
-                            small.length : countingReaderForClob.getLength();
-                    return ValueLobInMemory.createSmallLob(type, small, precision);
+                    return type == Value.BLOB ? ValueBlob.createSmall(small)
+                            : ValueClob.createSmall(small, countingReaderForClob.getLength());
                 }
                 // For a BLOB, precision is length in bytes.
                 // For a CLOB, precision is length in chars
@@ -445,8 +430,8 @@ public class LobStorageBackend implements LobStorageInterface {
                 prep.setInt(3, tableId);
                 prep.execute();
                 reuse(sql, prep);
-                return ValueLobDatabase.create(type,
-                        database, tableId, lobId, precision);
+                LobDataDatabase lobData = new LobDataDatabase(database, tableId, lobId);
+                return type == Value.BLOB ? new ValueBlob(precision, lobData) : new ValueClob(precision, lobData);
             }
         }
     }
@@ -457,18 +442,17 @@ public class LobStorageBackend implements LobStorageInterface {
     }
 
     @Override
-    public ValueLob copyLob(ValueLob old_, int tableId, long length) {
-        ValueLobDatabase old = (ValueLobDatabase) old_;
+    public ValueLob copyLob(ValueLob old, int tableId, long length) {
+        LobDataDatabase lobData = (LobDataDatabase) old.getLobData();
         int type = old.getValueType();
-        long oldLobId = old.getLobId();
+        long oldLobId = lobData.getLobId();
         assertNotHolds(conn.getSession());
         // see locking discussion at the top
         synchronized (database) {
             synchronized (conn.getSession()) {
                 try {
-                    init();
-                    ValueLob v = null;
-                    if (!old.isRecoveryReference()) {
+                    LobDataDatabase newLobData;
+                    if (!lobData.isRecoveryReference()) {
                         long lobId = getNextLobId();
                         String sql = "INSERT INTO " + LOB_MAP +
                                 "(LOB, SEQ, POS, HASH, BLOCK) " +
@@ -491,13 +475,13 @@ public class LobStorageBackend implements LobStorageInterface {
                         prep.executeUpdate();
                         reuse(sql, prep);
 
-                        v = ValueLobDatabase.create(type, database, tableId, lobId, length);
+                        newLobData = new LobDataDatabase(database, tableId, lobId);
                     } else {
                         // Recovery process, no need to copy LOB using normal
                         // infrastructure
-                        v = ValueLobDatabase.create(type, database, tableId, oldLobId, length);
+                        newLobData = new LobDataDatabase(database, tableId, oldLobId);
                     }
-                    return v;
+                    return type == Value.BLOB ? new ValueBlob(length, newLobData) : new ValueClob(length, newLobData);
                 } catch (SQLException e) {
                     throw DbException.convert(e);
                 }
@@ -592,22 +576,20 @@ public class LobStorageBackend implements LobStorageInterface {
     }
 
     @Override
-    public ValueLob createBlob(InputStream in, long maxLength) {
-        init();
-        return addLob(in, maxLength, Value.BLOB, null);
+    public ValueBlob createBlob(InputStream in, long maxLength) {
+        return (ValueBlob) addLob(in, maxLength, Value.BLOB, null);
     }
 
     @Override
-    public ValueLob createClob(Reader reader, long maxLength) {
-        init();
+    public ValueClob createClob(Reader reader, long maxLength) {
         long max = maxLength == -1 ? Long.MAX_VALUE : maxLength;
         CountingReaderInputStream in = new CountingReaderInputStream(reader, max);
-        return addLob(in, Long.MAX_VALUE, Value.CLOB, in);
+        return (ValueClob) addLob(in, Long.MAX_VALUE, Value.CLOB, in);
     }
 
     private static void assertNotHolds(Object lock) {
         if (Thread.holdsLock(lock)) {
-            throw DbException.throwInternalError(lock.toString());
+            throw DbException.getInternalError(lock.toString());
         }
     }
 
@@ -618,7 +600,7 @@ public class LobStorageBackend implements LobStorageInterface {
      */
     static void assertHoldsLock(Object lock) {
         if (!Thread.holdsLock(lock)) {
-            throw DbException.throwInternalError(lock.toString());
+            throw DbException.getInternalError(lock.toString());
         }
     }
 
@@ -717,14 +699,17 @@ public class LobStorageBackend implements LobStorageInterface {
             if (n <= 0) {
                 return 0;
             }
+            if (n > remainingBytes) {
+                n = remainingBytes;
+            }
             long remaining = n;
             remaining -= skipSmall(remaining);
             if (remaining > BLOCK_LENGTH) {
-                while (remaining > BLOCK_LENGTH) {
+                do {
                     remaining -= BLOCK_LENGTH;
                     remainingBytes -= BLOCK_LENGTH;
                     lobMapIndex++;
-                }
+                } while (remaining > BLOCK_LENGTH);
                 bufferPos = 0;
                 buffer = null;
             }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -22,7 +22,6 @@ import org.h2.expression.ExpressionVisitor;
 import org.h2.expression.Parameter;
 import org.h2.expression.ValueExpression;
 import org.h2.message.DbException;
-import org.h2.result.ResultInterface;
 import org.h2.result.ResultTarget;
 import org.h2.result.Row;
 import org.h2.result.RowList;
@@ -173,8 +172,8 @@ public final class MergeUsing extends DataChangeStatement {
         for (When w : when) {
             w.checkRights();
         }
-        session.getUser().checkRight(targetTableFilter.getTable(), Right.SELECT);
-        session.getUser().checkRight(sourceTableFilter.getTable(), Right.SELECT);
+        session.getUser().checkTableRight(targetTableFilter.getTable(), Right.SELECT);
+        session.getUser().checkTableRight(sourceTableFilter.getTable(), Right.SELECT);
     }
 
     @Override
@@ -273,16 +272,6 @@ public final class MergeUsing extends DataChangeStatement {
     // Prepared interface implementations
 
     @Override
-    public boolean isTransactional() {
-        return true;
-    }
-
-    @Override
-    public ResultInterface queryMeta() {
-        return null;
-    }
-
-    @Override
     public int getType() {
         return CommandInterface.MERGE;
     }
@@ -306,20 +295,14 @@ public final class MergeUsing extends DataChangeStatement {
     /**
      * Abstract WHEN command of the MERGE statement.
      */
-    public abstract static class When implements HasSQL {
-
-        /**
-         * The parent MERGE statement.
-         */
-        final MergeUsing mergeUsing;
+    public abstract class When implements HasSQL {
 
         /**
          * AND condition of the command.
          */
         Expression andCondition;
 
-        When(MergeUsing mergeUsing) {
-            this.mergeUsing = mergeUsing;
+        When() {
         }
 
         /**
@@ -353,8 +336,8 @@ public final class MergeUsing extends DataChangeStatement {
          */
         boolean prepare(SessionLocal session) {
             if (andCondition != null) {
-                andCondition.mapColumns(mergeUsing.targetTableFilter, 0, Expression.MAP_INITIAL);
-                andCondition.mapColumns(mergeUsing.sourceTableFilter, 0, Expression.MAP_INITIAL);
+                andCondition.mapColumns(targetTableFilter, 0, Expression.MAP_INITIAL);
+                andCondition.mapColumns(sourceTableFilter, 0, Expression.MAP_INITIAL);
                 andCondition = andCondition.optimize(session);
                 if (andCondition.isConstant()) {
                     if (andCondition.getBooleanValue(session)) {
@@ -405,15 +388,11 @@ public final class MergeUsing extends DataChangeStatement {
 
     }
 
-    public static final class WhenMatchedThenDelete extends When {
-
-        public WhenMatchedThenDelete(MergeUsing mergeUsing) {
-            super(mergeUsing);
-        }
+    public final class WhenMatchedThenDelete extends When {
 
         @Override
         void merge(SessionLocal session, ResultTarget deltaChangeCollector, ResultOption deltaChangeCollectionMode) {
-            TableFilter targetTableFilter = mergeUsing.targetTableFilter;
+            TableFilter targetTableFilter = MergeUsing.this.targetTableFilter;
             Table table = targetTableFilter.getTable();
             Row row = targetTableFilter.get();
             if (deltaChangeCollectionMode == ResultOption.OLD) {
@@ -433,7 +412,7 @@ public final class MergeUsing extends DataChangeStatement {
 
         @Override
         void checkRights() {
-            mergeUsing.getSession().getUser().checkRight(mergeUsing.targetTableFilter.getTable(), Right.DELETE);
+            getSession().getUser().checkTableRight(targetTableFilter.getTable(), Right.DELETE);
         }
 
         @Override
@@ -443,13 +422,9 @@ public final class MergeUsing extends DataChangeStatement {
 
     }
 
-    public static final class WhenMatchedThenUpdate extends When {
+    public final class WhenMatchedThenUpdate extends When {
 
         private SetClauseList setClauseList;
-
-        public WhenMatchedThenUpdate(MergeUsing mergeUsing) {
-            super(mergeUsing);
-        }
 
         public void setSetClauseList(SetClauseList setClauseList) {
             this.setClauseList = setClauseList;
@@ -457,19 +432,19 @@ public final class MergeUsing extends DataChangeStatement {
 
         @Override
         void merge(SessionLocal session, ResultTarget deltaChangeCollector, ResultOption deltaChangeCollectionMode) {
-            TableFilter targetTableFilter = mergeUsing.targetTableFilter;
+            TableFilter targetTableFilter = MergeUsing.this.targetTableFilter;
             Table table = targetTableFilter.getTable();
             try (RowList rows = new RowList(session, table)) {
                 setClauseList.prepareUpdate(table, session, deltaChangeCollector, deltaChangeCollectionMode, rows,
                         targetTableFilter.get(), false);
-                Update.doUpdate(mergeUsing, session, table, rows);
+                Update.doUpdate(MergeUsing.this, session, table, rows);
             }
         }
 
         @Override
         boolean prepare(SessionLocal session) {
             boolean result = super.prepare(session);
-            setClauseList.mapAndOptimize(session, mergeUsing.targetTableFilter, mergeUsing.sourceTableFilter);
+            setClauseList.mapAndOptimize(session, targetTableFilter, sourceTableFilter);
             return result;
         }
 
@@ -480,7 +455,7 @@ public final class MergeUsing extends DataChangeStatement {
 
         @Override
         void checkRights() {
-            mergeUsing.getSession().getUser().checkRight(mergeUsing.targetTableFilter.getTable(), Right.UPDATE);
+            getSession().getUser().checkTableRight(targetTableFilter.getTable(), Right.UPDATE);
         }
 
         @Override
@@ -496,7 +471,7 @@ public final class MergeUsing extends DataChangeStatement {
 
     }
 
-    public static final class WhenNotMatched extends When {
+    public final class WhenNotMatched extends When {
 
         private Column[] columns;
 
@@ -504,8 +479,7 @@ public final class MergeUsing extends DataChangeStatement {
 
         private final Expression[] values;
 
-        public WhenNotMatched(MergeUsing mergeUsing, Column[] columns, Boolean overridingSystem, Expression[] values) {
-            super(mergeUsing);
+        public WhenNotMatched(Column[] columns, Boolean overridingSystem, Expression[] values) {
             this.columns = columns;
             this.overridingSystem = overridingSystem;
             this.values = values;
@@ -513,7 +487,7 @@ public final class MergeUsing extends DataChangeStatement {
 
         @Override
         void merge(SessionLocal session, ResultTarget deltaChangeCollector, ResultOption deltaChangeCollectionMode) {
-            Table table = mergeUsing.targetTableFilter.getTable();
+            Table table = targetTableFilter.getTable();
             Row newRow = table.getTemplateRow();
             Expression[] expr = values;
             for (int i = 0, len = columns.length; i < len; i++) {
@@ -548,8 +522,8 @@ public final class MergeUsing extends DataChangeStatement {
         @Override
         boolean prepare(SessionLocal session) {
             boolean result = super.prepare(session);
-            TableFilter targetTableFilter = mergeUsing.targetTableFilter,
-                    sourceTableFilter = mergeUsing.sourceTableFilter;
+            TableFilter targetTableFilter = MergeUsing.this.targetTableFilter,
+                    sourceTableFilter = MergeUsing.this.sourceTableFilter;
             if (columns == null) {
                 columns = targetTableFilter.getTable().getColumns();
             }
@@ -576,7 +550,7 @@ public final class MergeUsing extends DataChangeStatement {
 
         @Override
         void checkRights() {
-            mergeUsing.getSession().getUser().checkRight(mergeUsing.targetTableFilter.getTable(), Right.INSERT);
+            getSession().getUser().checkTableRight(targetTableFilter.getTable(), Right.INSERT);
         }
 
         @Override

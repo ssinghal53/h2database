@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -241,8 +241,11 @@ public class TestPageStore extends TestDb {
             return;
         }
         deleteDb("pageStoreDefrag");
-        Connection conn = getConnection(
-                "pageStoreDefrag;LOG=0;UNDO_LOG=0;LOCK_MODE=0");
+        String url = "pageStoreDefrag;UNDO_LOG=0;LOCK_MODE=0";
+        if (!config.mvStore) {
+            url += ";LOG=0";
+        }
+        Connection conn = getConnection(url);
         Statement stat = conn.createStatement();
         int tableCount = 10;
         int rowCount = getSize(1000, 100000);
@@ -708,7 +711,7 @@ public class TestPageStore extends TestDb {
         conn = getConnection("pageStoreCreatePkLater");
         stat = conn.createStatement();
         stat.execute("create table test(id int not null) as select 100");
-        stat.execute("create primary key on test(id)");
+        stat.execute("alter table test add primary key(id)");
         conn.close();
         conn = getConnection("pageStoreCreatePkLater");
         stat = conn.createStatement();
@@ -870,7 +873,7 @@ public class TestPageStore extends TestDb {
         }
         try (Connection c = DriverManager.getConnection(url)) {
             try (ResultSet rs = c.createStatement().executeQuery(
-                    "SELECT `VALUE` FROM INFORMATION_SCHEMA.SETTINGS WHERE NAME = 'MV_STORE'")) {
+                    "SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME = 'MV_STORE'")) {
                 assertTrue(rs.next());
                 assertEquals("false", rs.getString(1));
                 assertFalse(rs.next());

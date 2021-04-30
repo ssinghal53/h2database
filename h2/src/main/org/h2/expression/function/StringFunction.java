@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -152,7 +152,7 @@ public final class StringFunction extends FunctionN {
             break;
         }
         default:
-            throw DbException.throwInternalError("function=" + function);
+            throw DbException.getInternalError("function=" + function);
         }
         return v1;
     }
@@ -228,7 +228,7 @@ public final class StringFunction extends FunctionN {
             type = TypeInfo.TYPE_VARCHAR;
             break;
         default:
-            throw DbException.throwInternalError("function=" + function);
+            throw DbException.getInternalError("function=" + function);
         }
         if (allConst) {
             return TypedValueExpression.getTypedIfNull(getValue(session), type);

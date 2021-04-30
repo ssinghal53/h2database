@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -23,6 +23,7 @@ import org.h2.expression.ValueExpression;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.mode.DefaultNullOrdering;
+import org.h2.pagestore.PageStore;
 import org.h2.pagestore.db.SessionPageStore;
 import org.h2.result.ResultInterface;
 import org.h2.schema.Schema;
@@ -77,6 +78,7 @@ public class Set extends Prepared {
         case SetTypes.TIME_ZONE:
         case SetTypes.VARIABLE_BINARY:
         case SetTypes.TRUNCATE_LARGE_LENGTH:
+        case SetTypes.WRITE_DELAY:
             return true;
         default:
         }
@@ -300,9 +302,13 @@ public class Set extends Prepared {
         }
         case SetTypes.LOG: {
             int value = getIntValue();
-            if (database.isPersistent() && value != database.getLogMode()) {
+            if (database.isMVStore()) {
+                throw DbException.getUnsupportedException("MV_STORE=TRUE && LOG");
+            }
+            PageStore pageStore = database.getPageStore();
+            if (pageStore != null && value != pageStore.getLogMode()) {
                 session.getUser().checkAdmin();
-                database.setLogMode(value);
+                pageStore.setLogMode(value);
             }
             break;
         }
@@ -604,7 +610,7 @@ public class Set extends Prepared {
             session.setTruncateLargeLength(expression.getBooleanValue(session));
             break;
         default:
-            DbException.throwInternalError("type="+type);
+            throw DbException.getInternalError("type="+type);
         }
         // the meta data information has changed
         database.getNextModificationDataId();

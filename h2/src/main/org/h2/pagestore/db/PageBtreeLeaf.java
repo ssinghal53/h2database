@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -103,7 +103,7 @@ public class PageBtreeLeaf extends PageBtree {
     }
 
     private int addRow(SearchRow row, boolean tryOnly) {
-        int rowLength = index.getRowSize(data, row, onlyPosition);
+        int rowLength = index.getRowSize(row, onlyPosition);
         int pageSize = index.getPageStore().getPageSize();
         int last = entryCount == 0 ? pageSize : offsets[entryCount - 1];
         if (last - rowLength < start + OFFSET_LENGTH) {
@@ -125,13 +125,13 @@ public class PageBtreeLeaf extends PageBtree {
             // change the offsets (now storing only positions)
             int o = pageSize;
             for (int i = 0; i < entryCount; i++) {
-                o -= index.getRowSize(data, getRow(i), true);
+                o -= index.getRowSize(getRow(i), true);
                 offsets[i] = o;
             }
             last = entryCount == 0 ? pageSize : offsets[entryCount - 1];
-            rowLength = index.getRowSize(data, row, true);
+            rowLength = index.getRowSize(row, true);
             if (last - rowLength < start + OFFSET_LENGTH) {
-                throw DbException.throwInternalError();
+                throw DbException.getInternalError();
             }
         }
         index.getPageStore().logUndo(this, data);
@@ -168,7 +168,7 @@ public class PageBtreeLeaf extends PageBtree {
         written = false;
         changeCount = index.getPageStore().getChangeCount();
         if (entryCount <= 0) {
-            DbException.throwInternalError(Integer.toString(entryCount));
+            throw DbException.getInternalError(Integer.toString(entryCount));
         }
         int startNext = at > 0 ? offsets[at - 1] : index.getPageStore().getPageSize();
         int rowLength = startNext - offsets[at];

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -233,7 +233,8 @@ public final class Transaction {
                     break;
                 case STATUS_ROLLED_BACK:
                     valid = currentStatus == STATUS_OPEN ||
-                            currentStatus == STATUS_PREPARED;
+                            currentStatus == STATUS_PREPARED ||
+                            currentStatus == STATUS_ROLLING_BACK;
                     break;
                 case STATUS_CLOSED:
                     valid = currentStatus == STATUS_COMMITTED ||

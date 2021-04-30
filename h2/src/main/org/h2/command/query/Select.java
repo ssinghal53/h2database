@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -355,7 +355,7 @@ public class Select extends Query {
     }
 
     private boolean isHavingNullOrFalse(Value[] row) {
-        return havingIndex >= 0 && !row[havingIndex].getBoolean();
+        return havingIndex >= 0 && !row[havingIndex].isTrue();
     }
 
     private Index getGroupSortedIndex() {
@@ -548,7 +548,7 @@ public class Select extends Query {
             if (withHaving && isHavingNullOrFalse(row)) {
                 continue;
             }
-            if (qualifyIndex >= 0 && !row[qualifyIndex].getBoolean()) {
+            if (qualifyIndex >= 0 && !row[qualifyIndex].isTrue()) {
                 continue;
             }
             if (quickOffset && offset > 0) {
@@ -595,7 +595,11 @@ public class Select extends Query {
             return null;
         }
         ArrayList<Column> sortColumns = Utils.newSmallArrayList();
-        for (int idx : sort.getQueryColumnIndexes()) {
+        int[] queryColumnIndexes = sort.getQueryColumnIndexes();
+        int queryIndexesLength = queryColumnIndexes.length;
+        int[] sortIndex = new int[queryIndexesLength];
+        for (int i = 0, j = 0; i < queryIndexesLength; i++) {
+            int idx = queryColumnIndexes[i];
             if (idx < 0 || idx >= expressions.size()) {
                 throw DbException.getInvalidValueException("ORDER BY", idx + 1);
             }
@@ -612,6 +616,7 @@ public class Select extends Query {
                 return null;
             }
             sortColumns.add(exprCol.getColumn());
+            sortIndex[j++] = i;
         }
         Column[] sortCols = sortColumns.toArray(new Column[0]);
         if (sortCols.length == 0) {
@@ -642,9 +647,10 @@ public class Select extends Query {
                     if (idxCol.column != sortCol) {
                         continue loop;
                     }
+                    int sortType = sortTypes[sortIndex[j]];
                     if (sortCol.isNullable()
-                            ? defaultNullOrdering.addExplicitNullOrdering(idxCol.sortType) != sortTypes[j]
-                            : (idxCol.sortType & SortOrder.DESCENDING) != (sortTypes[j] & SortOrder.DESCENDING)) {
+                            ? defaultNullOrdering.addExplicitNullOrdering(idxCol.sortType) != sortType
+                            : (idxCol.sortType & SortOrder.DESCENDING) != (sortType & SortOrder.DESCENDING)) {
                         continue loop;
                     }
                 }
@@ -757,11 +763,11 @@ public class Select extends Query {
     }
 
     @Override
-    protected ResultInterface queryWithoutCache(int maxRows, ResultTarget target) {
+    protected ResultInterface queryWithoutCache(long maxRows, ResultTarget target) {
         disableLazyForJoinSubqueries(topTableFilter);
         OffsetFetch offsetFetch = getOffsetFetch(maxRows);
         long offset = offsetFetch.offset;
-        int fetch = offsetFetch.fetch;
+        long fetch = offsetFetch.fetch;
         boolean fetchPercent = offsetFetch.fetchPercent;
         boolean lazy = session.isLazyQueryExecution() &&
                 target == null && !isForUpdate && !isQuickAggregateQuery &&
@@ -807,7 +813,7 @@ public class Select extends Query {
         LazyResult lazyResult = null;
         if (fetch != 0) {
             // Cannot apply limit now if percent is specified
-            int limit = fetchPercent ? -1 : fetch;
+            long limit = fetchPercent ? -1 : fetch;
             if (isQuickAggregateQuery) {
                 queryQuick(columnCount, to, quickOffset && offset > 0);
             } else if (isWindowQuery) {
@@ -971,7 +977,7 @@ public class Select extends Query {
     @Override
     public void init() {
         if (checkInit) {
-            DbException.throwInternalError();
+            throw DbException.getInternalError();
         }
         filters.sort(TableFilter.ORDER_IN_FROM_COMPARATOR);
         expandColumnList();
@@ -1159,7 +1165,7 @@ public class Select extends Query {
             return;
         }
         if (!checkInit) {
-            DbException.throwInternalError("not initialized");
+            throw DbException.getInternalError("not initialized");
         }
         if (orderList != null) {
             prepareOrder(orderList, expressions.size());

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -64,6 +64,7 @@ public class TableLink extends Table {
     private boolean globalTemporary;
     private boolean readOnly;
     private boolean targetsMySql;
+    private int fetchSize = 0;
 
     public TableLink(Schema schema, int id, String name, String driver,
             String url, String user, String password, String originalSchema,
@@ -85,8 +86,7 @@ public class TableLink extends Table {
             }
             Column[] cols = { };
             setColumns(cols);
-            linkedIndex = new LinkedIndex(this, id, IndexColumn.wrap(cols),
-                    IndexType.createNonUnique(false));
+            linkedIndex = new LinkedIndex(this, id, IndexColumn.wrap(cols), 0, IndexType.createNonUnique(false));
             indexes.add(linkedIndex);
         }
     }
@@ -200,8 +200,7 @@ public class TableLink extends Table {
         Column[] cols = columnList.toArray(new Column[0]);
         setColumns(cols);
         int id = getId();
-        linkedIndex = new LinkedIndex(this, id, IndexColumn.wrap(cols),
-                IndexType.createNonUnique(false));
+        linkedIndex = new LinkedIndex(this, id, IndexColumn.wrap(cols), 0, IndexType.createNonUnique(false));
         indexes.add(linkedIndex);
         if (!isQuery) {
             readIndexes(meta, columnMap);
@@ -249,13 +248,14 @@ public class TableLink extends Table {
                 list.set(idx - 1, column);
             }
         } while (rs.next());
-        addIndex(list, IndexType.createPrimaryKey(false, false));
+        addIndex(list, list.size(), IndexType.createPrimaryKey(false, false));
         return pkName;
     }
 
     private void readIndexes(ResultSet rs, HashMap<String, Column> columnMap, String pkName) throws SQLException {
         String indexName = null;
         ArrayList<Column> list = Utils.newSmallArrayList();
+        int uniqueColumnCount = 0;
         IndexType indexType = null;
         while (rs.next()) {
             if (rs.getShort("TYPE") == DatabaseMetaData.tableIndexStatistic) {
@@ -267,15 +267,18 @@ public class TableLink extends Table {
                 continue;
             }
             if (indexName != null && !indexName.equals(newIndex)) {
-                addIndex(list, indexType);
+                addIndex(list, uniqueColumnCount, indexType);
+                uniqueColumnCount = 0;
                 indexName = null;
             }
             if (indexName == null) {
                 indexName = newIndex;
                 list.clear();
             }
-            boolean unique = !rs.getBoolean("NON_UNIQUE");
-            indexType = unique ? IndexType.createUnique(false, false) :
+            if (!rs.getBoolean("NON_UNIQUE")) {
+                uniqueColumnCount++;
+            }
+            indexType = uniqueColumnCount > 0 ? IndexType.createUnique(false, false) :
                     IndexType.createNonUnique(false);
             String col = rs.getString("COLUMN_NAME");
             col = convertColumnName(col);
@@ -283,7 +286,7 @@ public class TableLink extends Table {
             list.add(column);
         }
         if (indexName != null) {
-            addIndex(list, indexType);
+            addIndex(list, uniqueColumnCount, indexType);
         }
     }
 
@@ -342,7 +345,7 @@ public class TableLink extends Table {
         return columnName;
     }
 
-    private void addIndex(List<Column> list, IndexType indexType) {
+    private void addIndex(List<Column> list, int uniqueColumnCount, IndexType indexType) {
         // bind the index to the leading recognized columns in the index
         // (null columns might come from a function-based index)
         int firstNull = list.indexOf(null);
@@ -356,7 +359,7 @@ public class TableLink extends Table {
             list = list.subList(0, firstNull);
         }
         Column[] cols = list.toArray(new Column[0]);
-        Index index = new LinkedIndex(this, 0, IndexColumn.wrap(cols), indexType);
+        Index index = new LinkedIndex(this, 0, IndexColumn.wrap(cols), uniqueColumnCount, indexType);
         indexes.add(index);
     }
 
@@ -395,14 +398,16 @@ public class TableLink extends Table {
         if (readOnly) {
             buff.append(" READONLY");
         }
+        if (fetchSize != 0) {
+            buff.append(" FETCH_SIZE ").append(fetchSize);
+        }
         buff.append(" /*").append(DbException.HIDE_SQL).append("*/");
         return buff.toString();
     }
 
     @Override
-    public Index addIndex(SessionLocal session, String indexName, int indexId,
-            IndexColumn[] cols, IndexType indexType, boolean create,
-            String indexComment) {
+    public Index addIndex(SessionLocal session, String indexName, int indexId, IndexColumn[] cols,
+            int uniqueColumnCount, IndexType indexType, boolean create, String indexComment) {
         throw DbException.getUnsupportedException("LINK");
     }
 
@@ -500,6 +505,9 @@ public class TableLink extends Table {
                     PreparedStatement prep = preparedMap.remove(sql);
                     if (prep == null) {
                         prep = conn.getConnection().prepareStatement(sql);
+                        if (fetchSize != 0) {
+                            prep.setFetchSize(fetchSize);
+                        }
                     }
                     if (trace.isDebugEnabled()) {
                         StringBuilder builder = new StringBuilder(getName()).append(":\n").append(sql);
@@ -599,16 +607,6 @@ public class TableLink extends Table {
     }
 
     @Override
-    public Index getUniqueIndex() {
-        for (Index idx : indexes) {
-            if (idx.getIndexType().isUnique()) {
-                return idx;
-            }
-        }
-        return null;
-    }
-
-    @Override
     public void updateRows(Prepared prepared, SessionLocal session, RowList rows) {
         checkReadOnly();
         if (emitUpdates) {
@@ -686,6 +684,25 @@ public class TableLink extends Table {
                 }
             }
         }
+    }
+
+    /**
+     * Specify the number of rows fetched by the linked table command
+     *
+     * @param fetchSize
+     */
+    public void setFetchSize(int fetchSize) {
+        this.fetchSize = fetchSize;
+    }
+
+    /**
+     * The number of rows to fetch
+     * default is 0
+     *
+     * @return
+     */
+    public int getFetchSize() {
+        return fetchSize;
     }
 
 }

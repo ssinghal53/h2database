@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -59,14 +59,14 @@ public abstract class Query extends Prepared {
         /**
          * FETCH value.
          */
-        final int fetch;
+        final long fetch;
 
         /**
          * Whether FETCH value is a PERCENT value.
          */
         final boolean fetchPercent;
 
-        OffsetFetch(long offset, int fetch, boolean fetchPercent) {
+        OffsetFetch(long offset, long fetch, boolean fetchPercent) {
             this.offset = offset;
             this.fetch = fetch;
             this.fetchPercent = fetchPercent;
@@ -139,7 +139,7 @@ public abstract class Query extends Prepared {
     int resultColumnCount;
 
     private boolean noCache;
-    private int lastLimit;
+    private long lastLimit;
     private long lastEvaluated;
     private ResultInterface lastResult;
     private Value[] lastParameters;
@@ -185,11 +185,9 @@ public abstract class Query extends Prepared {
      * @param target the target to write results to
      * @return the result
      */
-    protected abstract ResultInterface queryWithoutCache(int limit,
-            ResultTarget target);
+    protected abstract ResultInterface queryWithoutCache(long limit, ResultTarget target);
 
-    private ResultInterface queryWithoutCacheLazyCheck(int limit,
-            ResultTarget target) {
+    private ResultInterface queryWithoutCacheLazyCheck(long limit, ResultTarget target) {
         boolean disableLazy = neverLazy && session.isLazyQueryExecution();
         if (disableLazy) {
             session.setLazyQueryExecution(false);
@@ -454,7 +452,7 @@ public abstract class Query extends Prepared {
     }
 
     @Override
-    public final ResultInterface query(int maxrows) {
+    public final ResultInterface query(long maxrows) {
         return query(maxrows, null);
     }
 
@@ -465,7 +463,7 @@ public abstract class Query extends Prepared {
      * @param target the target result (null will return the result)
      * @return the result set (if the target is not set).
      */
-    public final ResultInterface query(int limit, ResultTarget target) {
+    public final ResultInterface query(long limit, ResultTarget target) {
         if (isUnion()) {
             // union doesn't always know the parameter list of the left and
             // right queries
@@ -837,36 +835,34 @@ public abstract class Query extends Prepared {
      *            additional limit
      * @return the evaluated values
      */
-    OffsetFetch getOffsetFetch(int maxRows) {
-        int fetch = maxRows == 0 ? -1 : maxRows;
+    OffsetFetch getOffsetFetch(long maxRows) {
+        long offset;
+        if (offsetExpr != null) {
+            Value v = offsetExpr.getValue(session);
+            if (v == ValueNull.INSTANCE || (offset = v.getLong()) < 0) {
+                throw DbException.getInvalidValueException("result OFFSET", v);
+            }
+        } else {
+            offset = 0;
+        }
+        long fetch = maxRows == 0 ? -1 : maxRows;
         if (fetchExpr != null) {
             Value v = fetchExpr.getValue(session);
-            int l = v == ValueNull.INSTANCE ? -1 : v.getInt();
-            if (fetch < 0) {
-                fetch = l;
-            } else if (l >= 0) {
-                fetch = Math.min(l, fetch);
+            long l;
+            if (v == ValueNull.INSTANCE || (l = v.getLong()) < 0) {
+                throw DbException.getInvalidValueException("result FETCH", v);
             }
+            fetch = fetch < 0 ? l : Math.min(l, fetch);
         }
         boolean fetchPercent = this.fetchPercent;
         if (fetchPercent) {
-            // Need to check it now, because negative limit has special treatment later
-            if (fetch < 0 || fetch > 100) {
-                throw DbException.getInvalidValueException("FETCH PERCENT", fetch);
+            if (fetch > 100) {
+                throw DbException.getInvalidValueException("result FETCH PERCENT", fetch);
             }
             // 0 PERCENT means 0
             if (fetch == 0) {
                 fetchPercent = false;
             }
-        }
-        long offset;
-        if (offsetExpr != null) {
-            offset = offsetExpr.getValue(session).getLong();
-            if (offset < 0) {
-                offset = 0;
-            }
-        } else {
-            offset = 0;
         }
         return new OffsetFetch(offset, fetch, fetchPercent);
     }
@@ -887,12 +883,9 @@ public abstract class Query extends Prepared {
      *            target result or null
      * @return the result or null
      */
-    LocalResult finishResult(LocalResult result, long offset, int fetch, boolean fetchPercent, ResultTarget target) {
+    LocalResult finishResult(LocalResult result, long offset, long fetch, boolean fetchPercent, ResultTarget target) {
         if (offset != 0) {
-            if (offset > Integer.MAX_VALUE) {
-                throw DbException.getInvalidValueException("OFFSET", offset);
-            }
-            result.setOffset((int) offset);
+            result.setOffset(offset);
         }
         if (fetch >= 0) {
             result.setLimit(fetch);

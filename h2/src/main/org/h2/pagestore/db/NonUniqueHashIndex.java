@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -43,9 +43,9 @@ public class NonUniqueHashIndex extends Index {
     private final PageStoreTable tableData;
     private long rowCount;
 
-    public NonUniqueHashIndex(PageStoreTable table, int id, String indexName,
-            IndexColumn[] columns, IndexType indexType) {
-        super(table, id, indexName, columns, indexType);
+    public NonUniqueHashIndex(PageStoreTable table, int id, String indexName, IndexColumn[] columns,
+            IndexType indexType) {
+        super(table, id, indexName, columns, 0, indexType);
         Column column = columns[0].column;
         indexColumn = column.getColumnId();
         totalOrdering = DataType.hasTotalOrdering(column.getType().getValueType());
@@ -96,11 +96,11 @@ public class NonUniqueHashIndex extends Index {
     @Override
     public Cursor find(SessionLocal session, SearchRow first, SearchRow last) {
         if (first == null || last == null) {
-            throw DbException.throwInternalError(first + " " + last);
+            throw DbException.getInternalError(first + " " + last);
         }
         if (first != last) {
             if (TreeIndex.compareKeys(first, last) != 0) {
-                throw DbException.throwInternalError();
+                throw DbException.getInternalError();
             }
         }
         Value v = first.getValue(indexColumn);

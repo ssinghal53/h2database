@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -109,12 +109,35 @@ public class DbException extends RuntimeException {
             for (int i = 0; i < params.length; i++) {
                 String s = params[i];
                 if (s != null && s.length() > 0) {
-                    params[i] = StringUtils.quoteIdentifier(s);
+                    params[i] = quote(s);
                 }
             }
             message = MessageFormat.format(message, (Object[]) params);
         }
         return message;
+    }
+
+    private static String quote(String s) {
+        int l = s.length();
+        StringBuilder builder = new StringBuilder(l + 2).append('"');
+        for (int i = 0; i < l;) {
+            int cp = s.codePointAt(i);
+            i += Character.charCount(cp);
+            int t = Character.getType(cp);
+            if (t == 0 || t >= Character.SPACE_SEPARATOR && t <= Character.SURROGATE && cp != ' ') {
+                if (cp <= 0xffff) {
+                    StringUtils.appendHex(builder.append('\\'), cp, 2);
+                } else {
+                    StringUtils.appendHex(builder.append("\\+"), cp, 3);
+                }
+            } else {
+                if (cp == '"' || cp == '\\') {
+                    builder.append((char) cp);
+                }
+                builder.appendCodePoint(cp);
+            }
+        }
+        return builder.append('"').toString();
     }
 
     /**
@@ -284,15 +307,19 @@ public class DbException extends RuntimeException {
      *            string representation of value, will be truncated to 80
      *            characters
      * @param valueLength
-     *            the actual length of value
+     *            the actual length of value, {@code -1L} if unknown
      * @return the exception
      */
     public static DbException getValueTooLongException(String columnOrType, String value, long valueLength) {
         int length = value.length();
+        int m = valueLength >= 0 ? 22 : 0;
         StringBuilder builder = length > 80 //
-                ? new StringBuilder(83 + 22).append(value, 0, 80).append("...")
-                : new StringBuilder(length + 22).append(value);
-        return get(VALUE_TOO_LONG_2, columnOrType, builder.append(" (").append(valueLength).append(')').toString());
+                ? new StringBuilder(83 + m).append(value, 0, 80).append("...")
+                : new StringBuilder(length + m).append(value);
+        if (valueLength >= 0) {
+            builder.append(" (").append(valueLength).append(')');
+        }
+        return get(VALUE_TOO_LONG_2, columnOrType, builder.toString());
     }
 
     /**
@@ -307,29 +334,24 @@ public class DbException extends RuntimeException {
     }
 
     /**
-     * Throw an internal error. This method seems to return an exception object,
-     * so that it can be used instead of 'return', but in fact it always throws
-     * the exception.
+     * Gets an internal error.
      *
      * @param s the message
      * @return the RuntimeException object
-     * @throws RuntimeException the exception
      */
-    public static RuntimeException throwInternalError(String s) {
+    public static RuntimeException getInternalError(String s) {
         RuntimeException e = new RuntimeException(s);
         DbException.traceThrowable(e);
-        throw e;
+        return e;
     }
 
     /**
-     * Throw an internal error. This method seems to return an exception object,
-     * so that it can be used instead of 'return', but in fact it always throws
-     * the exception.
+     * Gets an internal error.
      *
      * @return the RuntimeException object
      */
-    public static RuntimeException throwInternalError() {
-        return throwInternalError("Unexpected code path");
+    public static RuntimeException getInternalError() {
+        return getInternalError("Unexpected code path");
     }
 
     /**
@@ -537,7 +559,7 @@ public class DbException extends RuntimeException {
         case LOB_CLOSED_ON_TIMEOUT_1:
             return new JdbcSQLTimeoutException(message, sql, state, errorCode, cause, stackTrace);
         case FUNCTION_MUST_RETURN_RESULT_SET_1:
-        case TRIGGER_SELECT_AND_ROW_BASED_NOT_SUPPORTED:
+        case INVALID_TRIGGER_FLAGS_1:
         case SUM_OR_AVG_ON_WRONG_DATATYPE_1:
         case MUST_GROUP_BY_COLUMN_1:
         case SECOND_PRIMARY_KEY:
@@ -606,6 +628,7 @@ public class DbException extends RuntimeException {
         case GENERATED_COLUMN_CANNOT_BE_ASSIGNED_1:
         case GENERATED_COLUMN_CANNOT_BE_UPDATABLE_BY_CONSTRAINT_2:
         case COLUMN_ALIAS_IS_NOT_SPECIFIED_1:
+        case GROUP_BY_NOT_IN_THE_RESULT:
             return new JdbcSQLSyntaxErrorException(message, sql, state, errorCode, cause, stackTrace);
         case HEX_STRING_ODD_1:
         case HEX_STRING_WRONG_1:

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -30,10 +30,12 @@ public abstract class PageIndex extends Index {
      * @param name the index name
      * @param newIndexColumns the columns that are indexed or null if this is
      *            not yet known
+     * @param uniqueColumnCount count of unique columns
      * @param newIndexType the index type
      */
-    protected PageIndex(Table newTable, int id, String name, IndexColumn[] newIndexColumns, IndexType newIndexType) {
-        super(newTable, id, name, newIndexColumns, newIndexType);
+    protected PageIndex(Table newTable, int id, String name, IndexColumn[] newIndexColumns, int uniqueColumnCount,
+            IndexType newIndexType) {
+        super(newTable, id, name, newIndexColumns, uniqueColumnCount, newIndexType);
     }
 
     /**

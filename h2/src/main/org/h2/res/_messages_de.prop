@@ -45,6 +45,7 @@
 90002=Methode nur zulässig für eine Abfrage. Erlaubt sind execute oder executeUpdate, nicht jedoch executeQuery
 90003=Hexadezimal Zahl mit einer ungeraden Anzahl Zeichen: {0}
 90004=Hexadezimal Zahl enthält unerlaubtes Zeichen: {0}
+90005=Ungültige Triggeroptionen: {0}
 90006=Die Sequenz {0} hat keine freien Nummern mehr
 90007=Das Objekt wurde bereits geschlossen
 90008=Unerlaubter Wert {0} für Parameter {1}
@@ -193,6 +194,7 @@
 90154=Erzeugte Spalte {0} kann nicht zugewiesen werden
 90155=Erzeugte Spalte {0} kann nicht durch eine referentielle Integrität mit dem Ausdruck {1} veränderbar sein
 90156=Spalten-Alias ist nicht für den Audruck {0} angegeben
+90157=#Column index {0} in GROUP BY clause is outside valid range 1 - {1}
 HY000=Allgemeiner Fehler: {0}
 HY004=Unbekannter Datentyp: {0}
 HYC00=Dieses Feature wird nicht unterstützt: {0}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -117,7 +117,7 @@ public abstract class Command implements CommandInterface {
      * @return the local result set
      * @throws DbException if the command is not a query
      */
-    public abstract ResultInterface query(int maxrows);
+    public abstract ResultInterface query(long maxrows);
 
     @Override
     public final ResultInterface getMetaData() {
@@ -151,9 +151,8 @@ public abstract class Command implements CommandInterface {
 
     @Override
     public void stop() {
-        if (!isTransactional()) {
-            session.commit(true);
-        } else if (session.getAutoCommit()) {
+        commitIfNonTransactional();
+        if (isTransactional() && session.getAutoCommit()) {
             session.commit(false);
         }
         if (trace.isInfoEnabled() && startTimeNanos != 0L) {
@@ -166,14 +165,14 @@ public abstract class Command implements CommandInterface {
 
     /**
      * Execute a query and return the result.
-     * This method prepares everything and calls {@link #query(int)} finally.
+     * This method prepares everything and calls {@link #query(long)} finally.
      *
      * @param maxrows the maximum number of rows to return
      * @param scrollable if the result set must be scrollable (ignored)
      * @return the result set
      */
     @Override
-    public ResultInterface executeQuery(int maxrows, boolean scrollable) {
+    public ResultInterface executeQuery(long maxrows, boolean scrollable) {
         startTimeNanos = 0L;
         long start = 0L;
         Database database = session.getDatabase();
@@ -240,6 +239,7 @@ public abstract class Command implements CommandInterface {
         boolean callStop = true;
         //noinspection SynchronizationOnLocalVariableOrMethodParameter
         synchronized (sync) {
+            commitIfNonTransactional();
             SessionLocal.Savepoint rollback = session.setSavepoint();
             session.startStatementWithinTransaction(this);
             DbException ex = null;
@@ -300,6 +300,16 @@ public abstract class Command implements CommandInterface {
         }
     }
 
+    private void commitIfNonTransactional() {
+        if (!isTransactional()) {
+            boolean autoCommit = session.getAutoCommit();
+            session.commit(true);
+            if (!autoCommit && session.getAutoCommit()) {
+                session.begin();
+            }
+        }
+    }
+
     private long filterConcurrentUpdate(DbException e, long start) {
         int errorCode = e.getErrorCode();
         if (errorCode != ErrorCode.CONCURRENT_UPDATE_1 && errorCode != ErrorCode.ROW_NOT_FOUND_IN_PRIMARY_INDEX
@@ -337,7 +347,7 @@ public abstract class Command implements CommandInterface {
 
     @Override
     public void cancel() {
-        this.cancel = true;
+        cancel = true;
     }
 
     @Override

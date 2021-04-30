@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -46,9 +46,9 @@ public class TreeIndex extends Index {
     private long rowCount;
     private boolean closed;
 
-    public TreeIndex(PageStoreTable table, int id, String indexName,
-            IndexColumn[] columns, IndexType indexType) {
-        super(table, id, indexName, columns, indexType);
+    public TreeIndex(PageStoreTable table, int id, String indexName, IndexColumn[] columns, int uniqueColumnCount,
+            IndexType indexType) {
+        super(table, id, indexName, columns, uniqueColumnCount, indexType);
         tableData = table;
         if (!database.isStarting()) {
             checkIndexColumnTypes(columns);
@@ -64,7 +64,7 @@ public class TreeIndex extends Index {
     @Override
     public void add(SessionLocal session, Row row) {
         if (closed) {
-            throw DbException.throwInternalError();
+            throw DbException.getInternalError();
         }
         TreeNode i = new TreeNode(row);
         TreeNode n = root, x = n;
@@ -82,7 +82,7 @@ public class TreeIndex extends Index {
             Row r = n.row;
             int compare = compareRows(row, r);
             if (compare == 0) {
-                if (indexType.isUnique()) {
+                if (uniqueColumnColumn > 0) {
                     if (!mayHaveNullDuplicates(row)) {
                         throw getDuplicateKeyException(row.toString());
                     }
@@ -129,7 +129,7 @@ public class TreeIndex extends Index {
                 }
                 return;
             default:
-                DbException.throwInternalError("b:" + x.balance * sign);
+                throw DbException.getInternalError("b:" + x.balance * sign);
             }
             if (x == root) {
                 return;
@@ -168,11 +168,11 @@ public class TreeIndex extends Index {
     @Override
     public void remove(SessionLocal session, Row row) {
         if (closed) {
-            throw DbException.throwInternalError();
+            throw DbException.getInternalError();
         }
         TreeNode x = findFirstNode(row, true);
         if (x == null) {
-            throw DbException.throwInternalError("not found!");
+            throw DbException.getInternalError("not found!");
         }
         TreeNode n;
         if (x.left == null) {
@@ -224,7 +224,7 @@ public class TreeIndex extends Index {
             }
 
             if (x.right == null) {
-                DbException.throwInternalError("tree corrupted");
+                throw DbException.getInternalError("tree corrupted");
             }
             x.right.parent = x;
             x.left.parent = x;
@@ -281,7 +281,7 @@ public class TreeIndex extends Index {
                 }
                 break;
             default:
-                DbException.throwInternalError("b: " + x.balance * sign);
+                throw DbException.getInternalError("b: " + x.balance * sign);
             }
             isLeft = x.isFromLeft();
             n = x.parent;
@@ -358,7 +358,7 @@ public class TreeIndex extends Index {
     @Override
     public Cursor findFirstOrLast(SessionLocal session, boolean first) {
         if (closed) {
-            throw DbException.throwInternalError(toString());
+            throw DbException.getInternalError(toString());
         }
         if (first) {
             // TODO optimization: this loops through NULL

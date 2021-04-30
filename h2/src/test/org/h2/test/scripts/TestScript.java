@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2020 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2021 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -32,6 +32,7 @@ import org.h2.api.ErrorCode;
 import org.h2.command.CommandContainer;
 import org.h2.command.CommandInterface;
 import org.h2.command.Prepared;
+import org.h2.command.dml.ScriptCommand;
 import org.h2.command.query.Query;
 import org.h2.engine.Mode.ModeEnum;
 import org.h2.jdbc.JdbcConnection;
@@ -138,7 +139,7 @@ public class TestScript extends TestDb {
         testScript("altertable-fk.sql");
         testScript("default-and-on_update.sql");
 
-        for (String s : new String[] { "add_months", "compatibility" }) {
+        for (String s : new String[] { "add_months", "compatibility", "group_by"}) {
             testScript("compatibility/" + s + ".sql");
         }
         for (String s : new String[] { "array", "bigint", "binary", "blob",
@@ -149,8 +150,10 @@ public class TestScript extends TestDb {
             testScript("datatypes/" + s + ".sql");
         }
         for (String s : new String[] { "alterDomain", "alterTableAdd", "alterTableAlterColumn", "alterTableDropColumn",
-                "alterTableRename", "analyze", "commentOn", "createAlias", "createConstant", "createDomain",
-                "createSequence", "createSynonym",
+                "alterTableDropConstraint",
+                "alterTableRename", "alterTableRenameConstraint",
+                "analyze", "commentOn", "createAlias", "createConstant", "createDomain",
+                "createIndex", "createSchema", "createSequence", "createSynonym",
                 "createTable", "createTrigger", "createView", "dropAllObjects", "dropDomain", "dropIndex",
                 "dropSchema", "dropTable", "grant", "truncateTable" }) {
             testScript("ddl/" + s + ".sql");
@@ -159,10 +162,15 @@ public class TestScript extends TestDb {
                 "merge", "mergeUsing", "replace", "script", "show", "update", "with" }) {
             testScript("dml/" + s + ".sql");
         }
-        for (String s : new String[] { "any", "array_agg", "avg", "bit_and_agg", "bit_or_agg", "bit_xor_agg", "count",
+        for (String s : new String[] { "any", "array_agg", "avg", "bit_and_agg", "bit_or_agg", "bit_xor_agg",
+                "corr",
+                "count",
+                "covar_pop", "covar_samp",
                 "envelope", "every", "histogram",
                 "json_arrayagg", "json_objectagg",
                 "listagg", "max", "min", "mode", "percentile", "rank",
+                "regr_avgx", "regr_avgy", "regr_count", "regr_intercept", "regr_r2", "regr_slope",
+                "regr_sxx", "regr_sxy", "regr_syy",
                 "stddev_pop", "stddev_samp", "sum", "var_pop", "var_samp" }) {
             testScript("functions/aggregate/" + s + ".sql");
         }
@@ -225,6 +233,10 @@ public class TestScript extends TestDb {
         for (String s : new String[] { "derived-column-names", "distinct", "joins", "query-optimisations", "select",
                 "table", "values", "window" }) {
             testScript("queries/" + s + ".sql");
+        }
+        if (config.mvStore) {
+            testScript("other/two_phase_commit.sql");
+            testScript("other/unique_include.sql");
         }
 
         deleteDb("script");
@@ -393,6 +405,12 @@ public class TestScript extends TestDb {
                         write(sql);
                         write("");
                         allowReconnect = false;
+                        break;
+                    case "@autocommit on":
+                        conn.setAutoCommit(true);
+                        break;
+                    case "@autocommit off":
+                        conn.setAutoCommit(false);
                         break;
                     default:
                         addWriteResultError("<command>", sql);
@@ -608,6 +626,8 @@ public class TestScript extends TestDb {
                 Prepared p = (Prepared) PREPARED.get(ci);
                 if (p instanceof Query) {
                     gotOrdered = ((Query) p).hasOrder();
+                } else if (p instanceof ScriptCommand) {
+                    gotOrdered = true;
                 }
             }
         }
